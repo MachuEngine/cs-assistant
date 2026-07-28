@@ -265,7 +265,7 @@ CS 도메인에는 교육 도메인에 없던 문제가 하나 있습니다 — 
 | 백엔드 | FastAPI (비동기) |
 | 오케스트레이션 | LangGraph (답변 초안) / 단일 호출 (분류) |
 | RAG | ChromaDB + BGE-M3 임베딩 + BGE-reranker (모두 CPU) |
-| 생성 LLM | Anthropic `claude-opus-5` (`ChatAnthropic`) |
+| 생성 LLM | Anthropic `claude-sonnet-5` (`ChatAnthropic`) |
 | Judge LLM | OpenAI `gpt-5.6-luna` — **생성과 다른 벤더** |
 | 커스텀 어댑터 | Ollama / vLLM 자체 호스팅 / RunPod Serverless (`BaseChatModel` 상속) |
 | 합성 데이터 | SQLite (주문·고객), 합성 정책 문서 |

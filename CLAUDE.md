@@ -23,7 +23,7 @@
 - Python / FastAPI (비동기)
 - LangGraph (reply agent) / 단일 LLM 호출 (triage)
 - ChromaDB + BGE-reranker, 임베딩 BGE-M3 — **임베딩·리랭킹은 CPU**
-- LLM: 생성 `claude-opus-5`(Anthropic, `ChatAnthropic`) / Judge `gpt-5.6-luna`(OpenAI) — **생성과 다른 벤더**
+- LLM: 생성 `claude-sonnet-5`(Anthropic, `ChatAnthropic`) / Judge `gpt-5.6-luna`(OpenAI) — **생성과 다른 벤더**
 - 합성 주문·고객 DB: SQLite
 - UI: Next.js (`frontend/`)
 - 배포: 클라우드 VM + Docker + Caddy HTTPS

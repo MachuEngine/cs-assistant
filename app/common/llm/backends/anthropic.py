@@ -26,7 +26,7 @@ def get_chat_anthropic(
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
     return ChatAnthropic(
-        model=model or os.getenv("ANTHROPIC_MODEL", "claude-opus-5"),
+        model=model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5"),
         api_key=api_key,
         temperature=temperature,
         max_tokens=max_tokens,
@@ -35,7 +35,7 @@ def get_chat_anthropic(
 
 class AnthropicJudgeBackend(LLMBackend):
     def __init__(self, model: str | None = None):
-        self.model = model or os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
+        self.model = model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
 
     async def generate(self, messages: list[dict], **kwargs) -> str:
         chat = get_chat_anthropic(
