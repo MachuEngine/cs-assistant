@@ -440,21 +440,21 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 
 **개발 루프 = 스모크셋(20건), 전체셋 = 사람이 직접 실행.** `--full`은 훅으로 차단한다.
 
-생성 모델 `claude-opus-5` 기준($5 / $25 per MTok) 개략 추정:
+생성 모델 `claude-sonnet-5` 기준($3 / $15 per MTok) 개략 추정:
 
 | 항목 | 토큰(입력/출력) | 건당 | 비고 |
 |---|---|---|---|
-| Triage 1건 | ~1K / ~0.2K | ≈ $0.010 | |
-| 초안 1건(재시도 없음) | ~8K / ~1.5K | ≈ $0.078 | 멀티턴 누적 포함 |
-| 초안 1건(평균 재시도 반영) | ×1.5 | ≈ $0.12 | |
+| Triage 1건 | ~1K / ~0.2K | ≈ $0.006 | |
+| 초안 1건(재시도 없음) | ~8K / ~1.5K | ≈ $0.047 | 멀티턴 누적 포함 |
+| 초안 1건(평균 재시도 반영) | ×1.5 | ≈ $0.070 | |
 | Judge 1건 | ~3K / ~0.5K | **요금 확인 후 갱신** | 벤더 요금 미확정 |
 
 | 실행 단위 | 개략 비용 |
 |---|---|
-| 스모크셋(초안 20건) | ≈ $2.5 + Judge |
-| 전체 reply eval(50건) | ≈ $6 + Judge |
-| 전체 triage eval(200건) | ≈ $2 |
-| **전체 1회 합계** | **≈ $10 내외 + Judge** |
+| 스모크셋(초안 20건) | ≈ $1.4 + Judge |
+| 전체 reply eval(50건) | ≈ $3.5 + Judge |
+| 전체 triage eval(200건) | ≈ $1.2 |
+| **전체 1회 합계** | **≈ $5 내외 + Judge** |
 
 → **billing alarm은 이 수치를 기준으로 건다.** 프롬프트 캐싱을 적용하면 반복 실행의 입력 비용이 크게 줄어든다(시스템 프롬프트·정책 청크가 요청 간 동일) — 최적화 항목으로 남겨둔다.
 
@@ -483,7 +483,7 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 | 오케스트레이션 | LangGraph (reply agent) / 단일 호출 (triage) |
 | 벡터스토어 | ChromaDB + Rerank (BGE-reranker) |
 | 임베딩 | BGE-M3 (CPU) |
-| 생성 LLM | **Anthropic `claude-opus-5`** (기본, `ChatAnthropic`) |
+| 생성 LLM | **Anthropic `claude-sonnet-5`** (기본, `ChatAnthropic`) |
 | Judge LLM | **OpenAI `gpt-5.6-luna`** — 생성과 **다른 벤더**. 선행 프로젝트 채택값이며 **본 프로젝트에서 κ 재검증 후 확정** |
 | 커스텀 어댑터 | Ollama / vLLM 자체 호스팅 / RunPod 서버리스 (`BaseChatModel` 직접 상속) |
 | 합성 데이터 DB | SQLite |
@@ -493,7 +493,7 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 
 **모델 선정 근거 (초기값, 측정 후 갱신)**
 
-- 생성 = `claude-opus-5`: 멀티턴 ReAct + 도구 인자 정확도가 관건이고, 잘못된 초안의 비용(고객에게 나가는 답변)이 크다. 비용이 문제가 되면 `claude-sonnet-5`로 내리고 eval로 회귀 여부를 확인한다 — 내리는 판단도 **측정 후에** 한다
+- 생성 = `claude-sonnet-5`: 이 프로젝트는 확신도 낮은 케이스를 에스컬레이션(E1, E7/E8)으로 걸러내는 안전망이 이미 있어, 생성 모델이 모든 edge case를 완벽히 처리할 필요는 없다 — ReAct 툴콜링·정책 인용·톤 유지 수준에서는 `claude-opus-5`가 오버스펙이라고 판단, 비용 대비 적절한 `claude-sonnet-5`를 기본값으로 채택(2026-07-29). 품질 회귀가 실제로 관측되면 `claude-opus-5`로 올리고 eval로 확인한다 — 올리는 판단도 **측정 후에** 한다. 실측 A/B는 실제 Anthropic API 키가 준비된 뒤(현재 개발은 Ollama로 진행 중) 진행 예정
 - Judge = 크로스 벤더: "생성 모델이 자기 글을 자기가 채점하지 않는다"의 가장 강한 형태
 - 모델 비교·확정 데이터는 `MODEL_SELECTION.md`에 누적
 
@@ -505,7 +505,7 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 |---|---|---|
 | `CS_API_KEY` | Next.js → FastAPI 서버 간 인증 (양쪽 동일한 긴 무작위 값) | 필수 |
 | `LLM_BACKEND` | 생성 백엔드 — `anthropic` / `openai` / `ollama` / `runpod` | `anthropic` |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 생성 모델 | — / `claude-opus-5` |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 생성 모델 | — / `claude-sonnet-5` |
 | `JUDGE_BACKEND` | Judge 백엔드 — 생성과 **독립 전환**. 키 없거나 실패 시 fail-fast | `openai` |
 | `OPENAI_API_KEY` / `OPENAI_JUDGE_MODEL` | Judge 모델 | — / `gpt-5.6-luna` |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | 로컬 개발 백엔드 | `http://localhost:11434` / — |
@@ -703,7 +703,7 @@ cs-assistant/
 - **파이프라인 언어: 영어 / 문서: 한국어** (0절)
 - 데이터셋: Bitext(26,872 / 27 인텐트 / 10 카테고리 / 영어 / CDLA-Sharing-1.0) + 합성 정책·주문 DB
 - **`response` 컬럼은 정답셋으로 쓰지 않음** (4.2절)
-- 생성 백엔드 기본: Anthropic `claude-opus-5` (`ChatAnthropic`)
+- 생성 백엔드 기본: Anthropic `claude-sonnet-5` (`ChatAnthropic`)
 - Judge: 크로스 벤더 — κ 재검증 후 확정
 - 훅 스크립트 언어: Python (stdlib json)
 - 범위: 풀스택(Next.js UI) + 배포까지 1차 범위
