@@ -179,7 +179,7 @@ CS 도메인에는 교육 도메인에 없던 문제가 하나 있습니다 — 
 |---|---|---|
 | 인텐트 정확도 (27-class) | 함수 (Bitext 라벨) | ≥ 0.85 |
 | 인텐트 macro-F1 | 함수 | ≥ 0.80 |
-| 카테고리 정확도 (10-class) | 함수 | ≥ 0.92 |
+| 카테고리 정확도 (11-class) | 함수 | ≥ 0.92 |
 | confidence 캘리브레이션 | 함수 | 오분류 건의 confidence가 유의하게 낮은가 |
 
 > **macro-F1을 함께 보는 이유**: Bitext는 인텐트당 약 1,000건으로 **분포가 균등**하므로 불균형 보정 목적이 아닙니다. 목적은 **인접 인텐트 쌍의 국소적 붕괴 탐지**입니다 — `check_invoice`↔`get_invoice`처럼 의미가 붙어 있는 쌍은 한쪽이 무너져도 전체 accuracy가 거의 움직이지 않습니다. 혼동행렬을 함께 리포트합니다.
@@ -284,7 +284,7 @@ CS 도메인에는 교육 도메인에 없던 문제가 하나 있습니다 — 
 | 항목 | 확인된 값 |
 |---|---|
 | 규모 | 26,872 QA 쌍 (인텐트당 약 1,000건 — 분포 균등) |
-| 인텐트 / 카테고리 | **27개 / 10개** (`ACCOUNT` `CANCELLATION_FEE` `DELIVERY` `FEEDBACK` `INVOICE` `NEWSLETTER` `ORDER` `PAYMENT` `REFUND` `SHIPPING_ADDRESS`) |
+| 인텐트 / 카테고리 | **27개 / 11개** (`ACCOUNT` `CANCEL` `CONTACT` `DELIVERY` `FEEDBACK` `INVOICE` `ORDER` `PAYMENT` `REFUND` `SHIPPING` `SUBSCRIPTION`) |
 | 컬럼 | `flags` · `instruction` · `category` · `intent` · `response` |
 | 언어 | **영어 전용** |
 | 라이선스 | **CDLA-Sharing-1.0** (share-alike) |

@@ -149,7 +149,7 @@ LLM 호출 추상화 레이어를 만들어줘. DESIGN.md 7절을 따른다.
 3. app/modules/triage/classifier.py
    - 입력: 마스킹된 티켓 본문 (+ flags)
    - 출력: {intent, category, confidence, requires_human, reason}
-   - 인텐트 27개 / 카테고리 10개 — Bitext 라벨 그대로 (DESIGN.md 4.1절)
+   - 인텐트 27개 / 카테고리 11개 — Bitext 라벨 그대로 (DESIGN.md 4.1절)
    - confidence 는 LLM이 기록만 하고, requires_human 판정은 코드가 한다
      (TRIAGE_CONFIDENCE_THRESHOLD, 기본 0.70 — 환경변수로 노출)
    - 프롬프트는 prompts/triage_*.md 로 외부화
@@ -175,7 +175,7 @@ mask_pii 와 E1~E8 판정의 단위 테스트 통과. 확인되면 멈추고 보
   ② 근거 없는 확약 — 도구가 반환한 적 없는 금액/날짜/환불 확약
   ③ 금지 표현 블랙리스트 — guarantee, we are liable 등 법적 확약 / 타사 비방 / 무조건 보상
   ④ 정책 인용 존재 — routing.py 에서 "필수"인 인텐트인데 인용 0건이면 거부
-     (ACCOUNT/NEWSLETTER/FEEDBACK 계열은 절차 안내라 인용 불필요 — 여기까지 강제하면
+     (ACCOUNT/SUBSCRIPTION/FEEDBACK/CONTACT 계열은 절차 안내라 인용 불필요 — 여기까지 강제하면
       없는 근거를 만들어내는 유인이 생긴다)
 - judge 노드: get_judge_backend()로 채점. app/modules/reply/judge.py 의 함수를 호출하며,
   이 함수는 나중에 오프라인 eval도 동일하게 호출한다(검증-배포 일치).

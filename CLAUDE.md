@@ -133,6 +133,6 @@ evals/golden/     evals/runners/     data/raw/     .env
 - **`save_draft` 게이트 4종**: ① **마스킹되지 않은 원본** PII 패턴 출현(마스킹 토큰 자체는 허용) ② 도구 결과에 없는 금액·날짜·환불 확약 ③ 금지 표현 블랙리스트 ④ 정책 인용 필수 인텐트인데 인용 0건. 임의로 완화하지 말 것. 거부 시 사유를 도구 응답으로 되돌려 에이전트가 자기교정하게 한다
 - **에스컬레이션**: `escalated`는 실패가 아니라 정상 종료 상태다. 조건 E1–E8은 전부 **코드**가 판정한다(DESIGN.md 3.1절). budget 소진 시 미달 초안을 그냥 내보내지 말 것 — **초안이 없는 것이 잘못된 초안보다 낫다**
 - **judge.py**: 출력 스키마 고정 — `{policy_compliance:1-5, tone:1-5, violations[], reasoning}`. 통과 조건은 `policy≥4 AND tone≥4 AND high severity 0건`. 루브릭 텍스트는 `prompts/judge_*.md`에 두고 변경 시 단독 커밋
-- **triage 모듈**: 에이전트를 쓰지 않는다(단일 호출 + structured output). "여기에도 ReAct를 넣자"는 제안 금지. 인텐트 **27개 / 카테고리 10개**(`ACCOUNT` `CANCELLATION_FEE` `DELIVERY` `FEEDBACK` `INVOICE` `NEWSLETTER` `ORDER` `PAYMENT` `REFUND` `SHIPPING_ADDRESS`) — Bitext 라벨을 임의로 재정의하지 말 것
+- **triage 모듈**: 에이전트를 쓰지 않는다(단일 호출 + structured output). "여기에도 ReAct를 넣자"는 제안 금지. 인텐트 **27개 / 카테고리 11개**(`ACCOUNT` `CANCEL` `CONTACT` `DELIVERY` `FEEDBACK` `INVOICE` `ORDER` `PAYMENT` `REFUND` `SHIPPING` `SUBSCRIPTION`) — Bitext 라벨을 임의로 재정의하지 말 것 (DESIGN.md 4.1절 실측표 참고)
 - **common/llm**: 새 백엔드 추가 시 `factory.py`와 `.env.example` 양쪽 갱신
 - **chat_runpod 어댑터**: 변경 시 로컬 Ollama로 먼저 검증 후 RunPod 적용. `/run` 제출 후 **동일 job_id를 폴링**할 것 — 재제출은 중복 실행이 된다

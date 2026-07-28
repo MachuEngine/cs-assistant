@@ -90,7 +90,7 @@ CS 티켓 처리는 분필 exam 모듈과 구조적으로 가장 유사한 케�
 >
 > | 위 노트의 기술 | 실제 확인된 값 |
 > |---|---|
-> | 상위 카테고리 = 결제 / 기술문제 / 계정관리 | **카테고리 10개** — `ACCOUNT` `CANCELLATION_FEE` `DELIVERY` `FEEDBACK` `INVOICE` `NEWSLETTER` `ORDER` `PAYMENT` `REFUND` `SHIPPING_ADDRESS`. **"기술문제" 카테고리는 존재하지 않는다** |
+> | 상위 카테고리 = 결제 / 기술문제 / 계정관리 | **카테고리 11개** — `ACCOUNT` `CANCEL` `CONTACT` `DELIVERY` `FEEDBACK` `INVOICE` `ORDER` `PAYMENT` `REFUND` `SHIPPING` `SUBSCRIPTION`. **"기술문제" 카테고리는 존재하지 않는다** (이 표는 최초 2026-07-28 정정 시 WebFetch로 확인해 10개·다른 이름으로 적었으나, 같은 날 실제 CSV를 직접 파싱해 11개로 재정정함 — DESIGN.md 4.1절이 최종본) |
 > | 톤(정중체/격식체) 주석 포함 | 별도 톤 컬럼은 없고, `flags` 컬럼의 언어 생성 태그로 인코딩됨 (`P` 정중 · `Q` 구어 · `W` 공격적 · `Z` 오타 등) |
 > | (언급 없음) | **언어: 영어 전용** — 파이프라인 언어를 영어로 확정하는 근거가 됨 (DESIGN.md 0절) |
 > | (언급 없음) | 라이선스 **CDLA-Sharing-1.0** (share-alike) → `data/raw/`는 커밋하지 않고 다운로드 스크립트로 재현 |

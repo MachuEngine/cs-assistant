@@ -82,7 +82,7 @@
 - **입력**: 마스킹된 티켓 본문
 - **출력**: `{intent, category, confidence, requires_human, reason}`
 - **구현**: 단일 LLM 호출 + structured output(구조화 스키마 강제). ReAct 불필요 — **에이전트가 필요 없는 곳에 에이전트를 쓰지 않는다**는 것도 설계 판단이다
-- **인텐트/카테고리**: Bitext의 27개 인텐트 / 10개 카테고리를 그대로 사용(4절 목록)
+- **인텐트/카테고리**: Bitext의 27개 인텐트 / 11개 카테고리를 그대로 사용(4절 목록)
 - **`requires_human` 판정**: LLM이 `confidence`를 **기록**하고, 임계값 통과 여부는 **코드가 결정**한다 (설계 원칙 1)
 
 ### 모듈 ② 답변 초안 생성 — ReAct Agent (LangGraph)
@@ -187,25 +187,25 @@ class ReplyState(TypedDict):
 | ORDER | `change_order` | **필수** | **필수** | — |
 | ORDER | `place_order` | 선택 | — | 선택 |
 | ORDER | `track_order` | — | **필수** | — |
-| CANCELLATION_FEE | `check_cancellation_fee` | **필수** | **필수** | **필수** |
+| CANCEL | `check_cancellation_fee` | **필수** | **필수** | **필수** |
 | REFUND | `check_refund_policy` | **필수** | — | 선택 |
 | REFUND | `get_refund` | **필수** | **필수** | **필수** |
 | REFUND | `track_refund` | 선택 | **필수** | — |
 | DELIVERY | `delivery_options` | **필수** | — | **필수** |
 | DELIVERY | `delivery_period` | **필수** | 선택 | — |
-| SHIPPING_ADDRESS | `change_shipping_address` | **필수** | **필수** | — |
-| SHIPPING_ADDRESS | `set_up_shipping_address` | 선택 | — | — |
+| SHIPPING | `change_shipping_address` | **필수** | **필수** | — |
+| SHIPPING | `set_up_shipping_address` | 선택 | — | — |
 | PAYMENT | `check_payment_methods` | **필수** | — | 선택 |
 | PAYMENT | `payment_issue` | 선택 | **필수** | — |
 | INVOICE | `check_invoice` / `get_invoice` | 선택 | **필수** | — |
 | ACCOUNT | `create_account` / `delete_account` / `edit_account` / `switch_account` / `recover_password` / `registration_problems` | — | — | — |
-| NEWSLETTER | `newsletter_subscription` | — | — | — |
+| SUBSCRIPTION | `newsletter_subscription` | — | — | — |
 | FEEDBACK | `review` | — | — | — |
 | FEEDBACK | `complaint` | — | — | — (E3: 에스컬레이션) |
-| — | `contact_human_agent` / `contact_customer_service` | — | — | — (E2: 에스컬레이션) |
+| CONTACT | `contact_human_agent` / `contact_customer_service` | — | — | — (E2: 에스컬레이션) |
 
 - **필수** = 해당 도구를 호출하지 않고 저장하면 `save_draft`가 거부
-- ACCOUNT/NEWSLETTER/FEEDBACK 계열은 **절차 안내**라 정책 조항 인용이 필요 없다 — 여기까지 인용을 강제하면 없는 근거를 만들어내는 유인이 생긴다
+- ACCOUNT/SUBSCRIPTION/FEEDBACK/CONTACT 계열은 **절차 안내**라 정책 조항 인용이 필요 없다 — 여기까지 인용을 강제하면 없는 근거를 만들어내는 유인이 생긴다
 
 ### 3.3 파라미터 초깃값
 
@@ -258,17 +258,50 @@ class ReplyState(TypedDict):
 
 | 항목 | 확인된 값 |
 |---|---|
-| 규모 | **26,872** 질문-답변 쌍 (인텐트당 약 1,000건 — **분포 균등**) |
+| 규모 | **26,872** 질문-답변 쌍 (인텐트당 약 950~1,000건 — **분포 균등**) |
 | 인텐트 | **27개** |
-| 카테고리 | **10개** — `ACCOUNT` `CANCELLATION_FEE` `DELIVERY` `FEEDBACK` `INVOICE` `NEWSLETTER` `ORDER` `PAYMENT` `REFUND` `SHIPPING_ADDRESS` |
+| 카테고리 | **11개** — `ACCOUNT` `CANCEL` `CONTACT` `DELIVERY` `FEEDBACK` `INVOICE` `ORDER` `PAYMENT` `REFUND` `SHIPPING` `SUBSCRIPTION` |
 | 컬럼 | `flags` · `instruction` · `category` · `intent` · `response` |
 | **언어** | **영어 전용** |
 | 라이선스 | **CDLA-Sharing-1.0** (share-alike) |
-| 엔티티 | `{{Order Number}}` 형식의 플레이스홀더, 약 30종 |
+| 엔티티 | `instruction` 컬럼에 등장하는 플레이스홀더 **9종** (아래 표) |
 | 성격 | hybrid synthetic — NLG로 확장 후 전산언어학자가 큐레이션 |
 
-**27개 인텐트 전체**
-`create_account` `delete_account` `edit_account` `switch_account` `recover_password` `registration_problems` `check_cancellation_fee` `delivery_options` `delivery_period` `complaint` `review` `check_invoice` `get_invoice` `newsletter_subscription` `cancel_order` `change_order` `place_order` `track_order` `check_payment_methods` `payment_issue` `check_refund_policy` `get_refund` `track_refund` `change_shipping_address` `set_up_shipping_address` `contact_human_agent` `contact_customer_service`
+> ⚠️ **2026-07-28 재정정**: 이전 버전은 카테고리를 10개로, 이름을 다르게(`CANCELLATION_FEE`·`SHIPPING_ADDRESS`·`NEWSLETTER`) 적어뒀었다. 실제 CSV를 직접 파싱해 확인한 결과 **11개**이며 `CANCEL`·`SHIPPING`·`SUBSCRIPTION`이 맞고, `contact_human_agent`/`contact_customer_service`는 별도 `CONTACT` 카테고리에 속한다(이전엔 "카테고리 없음"으로 잘못 기재됨). 엔티티 플레이스홀더도 데이터셋 카드 설명("약 30종")과 달리 **`instruction` 컬럼에는 9종만** 등장한다 — 나머지는 `response` 컬럼(정답셋으로 안 씀, 4.2절)에만 있다.
+
+**27개 인텐트 × 카테고리 (실측)**
+
+| 카테고리 | 인텐트 | 건수 |
+|---|---|---|
+| ACCOUNT (5,986) | `create_account` `delete_account` `edit_account` `switch_account` `recover_password` `registration_problems` | 각 ~995~1,000 |
+| CANCEL (950) | `check_cancellation_fee` | 950 |
+| CONTACT (1,999) | `contact_human_agent` `contact_customer_service` | 999 / 1,000 |
+| DELIVERY (1,994) | `delivery_options` `delivery_period` | 995 / 999 |
+| FEEDBACK (1,997) | `complaint` `review` | 1,000 / 997 |
+| INVOICE (1,999) | `check_invoice` `get_invoice` | 1,000 / 999 |
+| ORDER (3,988) | `cancel_order` `change_order` `place_order` `track_order` | 998 / 997 / 998 / 995 |
+| PAYMENT (1,998) | `check_payment_methods` `payment_issue` | 999 / 999 |
+| REFUND (2,992) | `check_refund_policy` `get_refund` `track_refund` | 997 / 997 / 998 |
+| SHIPPING (1,970) | `change_shipping_address` `set_up_shipping_address` | 973 / 997 |
+| SUBSCRIPTION (999) | `newsletter_subscription` | 999 |
+
+**엔티티 플레이스홀더 9종 (`instruction` 컬럼, 실측 빈도)**
+
+| 플레이스홀더 | 빈도 | 등장 인텐트 | 처리 방식 |
+|---|---|---|---|
+| `{{Order Number}}` | 2,907 | cancel_order·change_order·track_order | shop.db 주문 (10%는 존재하지 않는 값) |
+| `{{Account Type}}` | 1,011 | create_account·delete_account·edit_account·switch_account | 고정 어휘 목록에서 샘플링 (DB 무관) |
+| `{{Person Name}}` | 887 | check_invoice·get_invoice | 연결된 고객의 `name` |
+| `{{Account Category}}` | 822 | create_account·delete_account·edit_account·switch_account | 고정 어휘 목록에서 샘플링 (DB 무관) |
+| `{{Refund Amount}}` | 624 | get_refund·track_refund | 연결된 주문의 `amount` |
+| `{{Currency Symbol}}` | 372 | get_refund·track_refund | 연결된 주문의 `currency` → 기호 매핑 |
+| `{{Delivery City}}` | 234 | delivery_options | 고정 도시 목록에서 샘플링 (주문 무관) |
+| `{{Delivery Country}}` | 177 | delivery_options | 고정 국가 목록에서 샘플링 (주문 무관) |
+| `{{Invoice Number}}` | 8 | check_invoice·get_invoice | 연결된 주문에서 파생(`INV-{주문 접미사}`) |
+
+> `Account Type`/`Account Category`는 계정 생성 시나리오의 서술적 수식어(예: "business account", "premium account")라 우리 고객 등급(tier: standard/plus/vim)과 무관하다. `Delivery City`/`Delivery Country`는 "이 도시로 배송되나요?" 류의 가상 질의라 실제 주문과 연결할 필요가 없다(라우팅 표에서도 `delivery_options`는 `lookup_order`가 불필요).
+>
+> `change_shipping_address`·`check_cancellation_fee`·`payment_issue`·`check_invoice`·`get_invoice`는 텍스트에 `{{Order Number}}`가 없어도 라우팅 표(3.2절)상 `lookup_order`가 **필수**다 — 상담원이 고객 컨텍스트로 최근 주문을 조회하는 실제 CS 동작과 같다. 하이드레이션 시 이 인텐트들도 `order_id`를 배정한다(본문 텍스트 치환과는 별개로 메타데이터 필드로).
 
 **`flags` 코드** — 언어 생성 태그. 파이프라인이 실제로 사용한다.
 
@@ -305,19 +338,21 @@ Bitext의 `{{Order Number}}`는 **문자열 리터럴**이지 실제 값이 아�
                                         shop.db 의 실제 레코드로 치환
                                         (시드 고정, 티켓↔주문 매핑 기록)
 3. 결과: data/synthetic/tickets.jsonl
-         {ticket_id, text, intent, category, flags, order_id, customer_id}
+         {ticket_id, text, intent, category, flags, customer_id, order_id, order_exists}
 ```
 
 - **의도적으로 일부는 존재하지 않는 주문번호로 채운다** → 에스컬레이션 E6 경로를 실제로 발생시켜야 테스트가 된다(초깃값 10%)
-- 하이드레이션 매핑은 기록해 둔다 — 골든셋 정답 산출에 필요
+- `order_exists`(bool|null)가 하이드레이션 매핑 자체다 — `order_id`가 실제 `shop.db`에 있는지(`true`), 의도적으로 존재하지 않게 채운 것인지(`false`), 애초에 주문이 필요 없는 인텐트인지(`null`)를 기록해 골든셋(특히 `escalation_golden`의 E6 케이스) 정답 산출에 그대로 쓴다
+- `order_id`가 필요한 인텐트는 라우팅 표(3.2절)에서 `lookup_order`가 "필수"인 10종(`cancel_order` `change_order` `track_order` `check_cancellation_fee` `get_refund` `track_refund` `change_shipping_address` `payment_issue` `check_invoice` `get_invoice`) — 티켓 텍스트에 `{{Order Number}}`가 없어도 이 인텐트면 `order_id`를 배정한다(4.1절 참고)
+- **실측 검증 완료(2026-07-28)**: 26,872건 전체 하이드레이션, 잔여 미치환 플레이스홀더 0건, `order_exists=true` 건은 전부 `shop.db` 실조회 성공·소유 고객 일치, `order_exists=false` 건은 전부 실조회 실패(0건 충돌) 확인. `order_id` 배정 비율 중 fake 비중 약 9.5%(인텐트별 8.4~10.7%, 목표 10%에 근접)
 
 ### 4.4 합성 데이터
 
 | 항목 | 내용 |
 |---|---|
-| 정책 문서 | 가상 이커머스사(가칭 `Northwind Retail`) 영문 규정 — 반품/교환/환불/배송/취소수수료/보증/멤버십 등급. **각 조항에 번호를 부여**(`RET-03`, `SHIP-07` …)해 인용 가능하게 |
+| 정책 문서 | 가상 이커머스사(가칭 `Northwind Retail`) 영문 규정 — 반품·교환/환불/배송/취소수수료/보증/결제수단/멤버십 등급 7종 문서. **각 조항에 번호를 부여**(`RET-03`, `SHIP-07` …)해 인용 가능하게 |
 | 주문 DB | `orders(order_id, customer_id, status, carrier, tracking_no, ordered_at, delivered_at, amount, currency)` |
-| 고객 DB | `customers(customer_id, tier, joined_at, country)` — tier: `standard` / `plus` / `vip` |
+| 고객 DB | `customers(customer_id, name, tier, joined_at, country)` — tier: `standard` / `plus` / `vip`. **`name`은 4.1절 `{{Person Name}}` 하이드레이션에 필요해 스키마에 추가** |
 | 재현성 | 시드 고정. `scripts/build_synthetic_data.py`로 언제든 재생성 |
 
 **정책 문서는 tier·기한 분기를 반드시 포함한다.** 그래야 `check_customer_tier`가 장식이 아니라 실제로 답을 바꾸는 도구가 된다(예: `RET-03` 반품 기한 standard 14일 / plus 30일 / vip 60일).
