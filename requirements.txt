@@ -1,6 +1,16 @@
 # Phase 1 — 최소 의존성. 이후 Phase에서 실제로 쓸 때 항목을 추가한다
-# (langchain-anthropic/openai, langgraph, chromadb, sentence-transformers 등은 Phase 3~4).
+# (langchain-anthropic/openai, langgraph 등은 Phase 4).
 fastapi>=0.115
 uvicorn[standard]>=0.32
 httpx>=0.27
 pytest>=8.3
+
+# Phase 3 — RAG 인프라 (BGE-M3 임베딩 + BGE-reranker + ChromaDB, 전부 CPU)
+chromadb>=0.5
+FlagEmbedding>=1.3
+langchain-text-splitters>=0.3
+overrides>=7.7  # chromadb의 전이 의존성이지만 telemetry.py가 직접 import 하므로 명시
+# FlagEmbedding 1.4.0의 reranker 코드가 transformers 5.x에서 제거된
+# tokenizer.prepare_for_model()에 의존한다(패키지 메타데이터의 <6.0.0 제약은
+# 이 비호환을 못 막음, 2026-07-28 실측). 4.x 최신판으로 고정.
+transformers==4.57.6
