@@ -13,8 +13,13 @@ __pycache__/
 .venv/
 venv/
 
+# 원본 데이터셋 — CDLA-Sharing-1.0 재배포 조건 회피 + 레포 경량화.
+# scripts/download_bitext.py 로 재현한다 (출처·라이선스는 data/README.md)
+data/raw/
+
 # 생성물 (Phase 0에서 확장 예정)
 chroma_db/
 evals/reports/
 data/synthetic/*.db
+data/synthetic/tickets.jsonl
 .claude/agent-memory/

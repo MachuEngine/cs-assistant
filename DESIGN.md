@@ -8,12 +8,29 @@
 > 기획 배경은 `CS_PROJECT_NOTES.md`, 개발 하네스는 `CS_CLAUDE_CODE_HARNESS_LOOP.md` 참고.
 > 에이전트 행동 규칙은 `CLAUDE.md`, 빌드 절차는 `PROMPTS.md`.
 
+**문서 상태**: 2026-07-28 데이터셋 실측 검증 완료. 개발 착수 가능.
+
+---
+
+## 0. 언어 정책 (2026-07-28 확정)
+
+**파이프라인은 영어, 프로젝트 문서는 한국어.**
+
+| 대상 | 언어 |
+|---|---|
+| 티켓 입력(Bitext), 합성 정책 문서, LLM 프롬프트, 생성 초안, Judge 루브릭 | **영어** |
+| 설계 문서, 커밋 메시지, 코드 주석, UI 레이블 | **한국어** |
+
+**근거**: Bitext 데이터셋은 **영어 전용**이다(4절 검증 결과). 인텐트 라벨이 이 프로젝트의 유일한 외부 ground truth인데, 번역을 끼우면 (a) 번역 품질이 라벨과 어긋날 때 정확도 하락의 원인이 모델인지 번역인지 분리 불가능해지고, (b) 26,872건 번역 비용·시간이 든다. 정책 문서까지 영어로 통일하면 RAG 검색 질의·코퍼스가 같은 언어라 임베딩 성능도 자연스럽다.
+
+**따라 오는 결정**: PII 마스킹은 **영문 패턴**(이메일·전화·신용카드·주소)을 대상으로 한다. 분필의 한국어 마스킹(주민번호·학교명)은 이식하지 않는다.
+
 ---
 
 ## 1. 개요
 
 - **목적**: 고객 문의 티켓을 받아 (1) 유형을 분류하고, (2) 사내 정책·주문 정보를 근거로 **답변 초안**을 생성해 상담원에게 제시
-- **사용 맥락**: 포트폴리오(Agent·RAG·평가·벤더 통합·하네스 실습). 실사용자 확보 여부는 미정(6절 참고)
+- **사용 맥락**: 포트폴리오(Agent·RAG·평가·벤더 통합·하네스 실습). 실사용자 확보 여부는 미정(14절)
 - **핵심 포지션**: **자동 응답이 아니라 상담원 증강(human-in-the-loop)**. 모든 출력은 상담원 검토 대상이며, 확신도가 낮으면 초안을 만들지 않고 사람에게 에스컬레이션한다
 - **모듈**: ① 티켓 분류(Triage), ② 답변 초안 생성(ReAct Agent)
 - **데이터 원칙**: 실제 고객 데이터 미사용. 공개 데이터셋(Bitext) + 합성 정책 문서 + 합성 주문 DB
@@ -24,9 +41,9 @@
 
 대신 tool·정책·eval을 **구체적으로 정의할 수 있을 만큼만** 좁힌다 → 이커머스가 적합(주문조회·반품/교환·배송 tool이 직관적이고, 정책 위반 정의가 명확하며, 본인이 검증 가능).
 
-**verticalization을 구조로 차용**: Bitext 데이터셋의 27개 인텐트는 20개 버티컬에 공통인 것만 추출한 것이다. 이 2단계 설계를 그대로 프로젝트 구조로 가져온다.
+**verticalization을 구조로 차용**: Bitext는 스스로를 "customer service verticalization용"으로 규정하며, 특정 산업에 종속되지 않는 공통 인텐트만 담고 있다(4절). 이 2단계 설계를 그대로 프로젝트 구조로 가져온다.
 
-1. 공통 인텐트로 CS 에이전트 **기본 동작** 구현 (`app/modules/triage`, `app/modules/reply` 코어)
+1. 공통 인텐트 27개로 CS 에이전트 **기본 동작** 구현
 2. 그 위에 **얇은 이커머스 특화 레이어**를 얹는다 (합성 정책 문서 + 도메인 tool + 도메인 eval)
 
 → 프레이밍: "이커머스 CS를 만들었다"가 아니라 "**범용 CS 파이프라인을 도메인에 특화시키는 과정을 재현했다**".
@@ -40,13 +57,13 @@
 ```
 티켓 입력 → PII 마스킹 → [모듈 ①] Triage(인텐트·카테고리·confidence)
                               │
-                    confidence < 임계 ─→ escalate(초안 없음, 사유만)
+                    에스컬레이션 조건 해당 ─→ escalate(초안 없음, 사유만)
                               │
                               ▼
                    [모듈 ②] ReAct Agent ↔ tools(주문/정책/등급)
                               │ submit_for_review
                               ▼
-                   judge_node (별도 백엔드: 정책 준수 + 톤 채점)
+                   judge_node (별도 벤더 LLM: 정책 준수 + 톤 채점)
                               │
                               ▼
                    validate_node (코드가 threshold·근거인용·PII 판정)
@@ -65,7 +82,7 @@
 - **입력**: 마스킹된 티켓 본문
 - **출력**: `{intent, category, confidence, requires_human, reason}`
 - **구현**: 단일 LLM 호출 + structured output(구조화 스키마 강제). ReAct 불필요 — **에이전트가 필요 없는 곳에 에이전트를 쓰지 않는다**는 것도 설계 판단이다
-- **인텐트**: Bitext 27개 인텐트를 그대로 사용. 상위 카테고리 = 결제 / 기술문제 / 계정관리 (+ 이커머스 특화 레이어에서 주문·배송·반품 세분화)
+- **인텐트/카테고리**: Bitext의 27개 인텐트 / 10개 카테고리를 그대로 사용(4절 목록)
 - **`requires_human` 판정**: LLM이 `confidence`를 **기록**하고, 임계값 통과 여부는 **코드가 결정**한다 (설계 원칙 1)
 
 ### 모듈 ② 답변 초안 생성 — ReAct Agent (LangGraph)
@@ -76,7 +93,7 @@
 
 | 도구 | 역할 | 구현 |
 |---|---|---|
-| `search_policy` | 반품·교환·환불·배송 정책 문서 검색 | ChromaDB + Rerank |
+| `search_policy` | 반품·교환·환불·배송 정책 조항 검색 | ChromaDB + Rerank |
 | `lookup_order` | 주문 상태·배송 추적 조회 | 합성 주문 DB(SQLite) |
 | `check_customer_tier` | 고객 등급 조회(등급별 정책 분기용) | 합성 고객 DB |
 | `validate_draft_format` | 초안 형식 검증(인사·본문·마무리, 길이) | 함수 |
@@ -85,11 +102,14 @@
 | `escalate_to_human` | 스스로 처리 불가 판단 시 명시적 에스컬레이션 신호 | 함수 |
 | `submit_for_review` | 작성 완료 신호(인자 없음) | 함수 |
 
-**`save_draft`의 결정론적 게이트** (분필 `save_item`의 한국어 게이트·복사 게이트와 동일 역할):
-1. **PII 재유출 검사** — 마스킹 토큰이 복원됐거나 새 PII 패턴이 초안에 들어갔으면 거부
-2. **근거 없는 확약 검사** — `search_policy`/`lookup_order` 결과에 없는 금액·날짜·환불 확약이 포함되면 거부
-3. **금지 표현 검사** — 규칙 기반 블랙리스트(법적 확약, 타사 비방, 과장)
-4. **정책 인용 존재 검사** — 정책 판단이 필요한 인텐트인데 인용된 정책이 0건이면 거부
+**`save_draft`의 결정론적 게이트 4종**
+
+| # | 검사 | 거부 조건 |
+|---|---|---|
+| ① | **PII 재유출** | 초안에 **마스킹되지 않은 원본 PII 패턴**(이메일·전화·카드번호·주소)이 나타남. 마스킹 토큰(`{{EMAIL}}`) 자체는 허용 |
+| ② | **근거 없는 확약** | `search_policy`/`lookup_order`가 반환한 적 없는 금액·날짜·환불 확약이 초안에 포함 |
+| ③ | **금지 표현** | 규칙 기반 블랙리스트 — 법적 확약(`guarantee`, `we are liable`), 타사 비방, 무조건 보상 약속 |
+| ④ | **정책 인용 존재** | 정책 인용이 **필수**인 인텐트(3절 매핑)인데 인용된 조항이 0건 |
 
 거부 시 사유를 도구 응답으로 되돌려 에이전트가 스스로 교정하게 한다(자기교정 루프).
 
@@ -98,10 +118,10 @@
 | 노드 | 주체 | 판단하는 것 |
 |---|---|---|
 | `agent` | 생성 LLM | 어떤 도구를 몇 번 부를지, 초안 문장 작성, 제출 시점 |
-| `judge` | **별도 백엔드 LLM** | 정책 준수 점수, 톤 적절성 점수, 위반 항목 나열 |
+| `judge` | **별도 벤더 LLM** | 정책 준수 점수, 톤 점수, 위반 항목 나열 |
 | `validate` | **코드** | judge 점수의 threshold 통과, 근거 인용 존재, PII 검사, 재시도/에스컬레이션 결정 |
 
-> **judge를 별도 노드·별도 백엔드로 두는 이유** — 분필에서 얻은 교훈이다.
+> **judge를 별도 노드·별도 벤더로 두는 이유** — 분필에서 얻은 교훈이다.
 > 분필은 처음에 생성 에이전트가 `similarity_judge` 도구로 자기 출력을 스스로 채점(self-judge)했는데,
 > 그 신뢰도는 사람 라벨과 한 번도 대조된 적이 없었고, 정작 오프라인 eval이 검증하는 Judge와
 > 런타임에 배포된 Judge가 **서로 다른 코드 경로**였다(검증-배포 불일치).
@@ -116,11 +136,12 @@ class ReplyState(TypedDict):
     ticket: dict          # {ticket_id, text(마스킹 후), customer_id, ...}
     triage: dict          # {intent, category, confidence, requires_human}
     draft: dict           # {reply_text, cited_policies[], tools_used[]}
-    judge_result: dict    # {policy_compliance, tone_score, violations[]}
+    judge_result: dict    # {policy_compliance, tone, violations[], reasoning}
     validation_passed: bool
     validation_feedback: str
-    budget: int           # 남은 재시도 횟수 (무한루프 방지)
+    budget: int           # 남은 재시도 횟수
     outcome: str          # "auto_draft" | "escalated" | "failed"
+    escalation_reason: str
 ```
 
 ### HITL — 세 가지 종료 상태
@@ -129,15 +150,295 @@ class ReplyState(TypedDict):
 
 | `outcome` | 조건 | 상담원이 보는 것 |
 |---|---|---|
-| `auto_draft` | triage confidence ≥ 임계 & judge 통과 & 코드 검증 통과 | 초안 + 인용 정책 + 사용 도구 |
-| `escalated` | triage confidence 미달, 또는 `escalate_to_human` 호출, 또는 budget 소진 | **초안 없음** + 에스컬레이션 사유 |
+| `auto_draft` | 에스컬레이션 조건 미해당 & judge 통과 & 코드 검증 통과 | 초안 + 인용 정책 + 사용 도구 |
+| `escalated` | 3절 에스컬레이션 조건 중 하나라도 해당 | **초안 없음** + 에스컬레이션 사유 |
 | `failed` | 파이프라인 예외 | 오류 표시(내부 상세 비노출) |
 
 **초안이 없는 것이 잘못된 초안보다 낫다.** budget 소진 시 마지막 미달 초안을 그냥 내보내지 않는다.
 
 ---
 
-## 3. 기술 스택
+## 3. 라우팅 규칙 (구현에 직접 쓰이는 표)
+
+### 3.1 에스컬레이션 기준
+
+아래 중 **하나라도** 해당하면 `escalated`. 판정은 전부 **코드**가 한다.
+
+| ID | 조건 | 판정 시점 |
+|---|---|---|
+| E1 | `triage.confidence < TRIAGE_CONFIDENCE_THRESHOLD` | triage 직후 |
+| E2 | `intent == contact_human_agent` (고객이 명시적으로 사람을 요청) | triage 직후 |
+| E3 | `intent == complaint` (보상·책임 판단이 섞임) | triage 직후 |
+| E4 | Bitext `flags`에 `W`(offensive language) 포함 | triage 직후 |
+| E5 | 에이전트가 `escalate_to_human` 호출 | agent 중 |
+| E6 | `lookup_order`가 해당 주문을 못 찾음 | agent 중 |
+| E7 | `save_draft` 게이트를 **3회 연속** 통과 못함 | agent 중 |
+| E8 | `budget` 소진 후에도 `validate` 미통과 | validate 후 |
+
+> E3(complaint)를 자동 초안 대상에서 뺀 이유: 불만 티켓은 보상 여부·금액 판단이 섞이는데, 이건 정책 문서만으로 결정되지 않는 **제품 판단**이다. 초깃값으로 전량 에스컬레이션하고, 에스컬레이션 FP율이 과하면 그때 세분화한다.
+
+### 3.2 인텐트 → 도구 매핑
+
+`save_draft` 게이트 ④(정책 인용 필수 여부)와 프롬프트의 도구 안내가 이 표를 쓴다.
+
+| 카테고리 | 인텐트 | `search_policy` | `lookup_order` | `check_customer_tier` |
+|---|---|:---:|:---:|:---:|
+| ORDER | `cancel_order` | **필수** | **필수** | 선택 |
+| ORDER | `change_order` | **필수** | **필수** | — |
+| ORDER | `place_order` | 선택 | — | 선택 |
+| ORDER | `track_order` | — | **필수** | — |
+| CANCELLATION_FEE | `check_cancellation_fee` | **필수** | **필수** | **필수** |
+| REFUND | `check_refund_policy` | **필수** | — | 선택 |
+| REFUND | `get_refund` | **필수** | **필수** | **필수** |
+| REFUND | `track_refund` | 선택 | **필수** | — |
+| DELIVERY | `delivery_options` | **필수** | — | **필수** |
+| DELIVERY | `delivery_period` | **필수** | 선택 | — |
+| SHIPPING_ADDRESS | `change_shipping_address` | **필수** | **필수** | — |
+| SHIPPING_ADDRESS | `set_up_shipping_address` | 선택 | — | — |
+| PAYMENT | `check_payment_methods` | **필수** | — | 선택 |
+| PAYMENT | `payment_issue` | 선택 | **필수** | — |
+| INVOICE | `check_invoice` / `get_invoice` | 선택 | **필수** | — |
+| ACCOUNT | `create_account` / `delete_account` / `edit_account` / `switch_account` / `recover_password` / `registration_problems` | — | — | — |
+| NEWSLETTER | `newsletter_subscription` | — | — | — |
+| FEEDBACK | `review` | — | — | — |
+| FEEDBACK | `complaint` | — | — | — (E3: 에스컬레이션) |
+| — | `contact_human_agent` / `contact_customer_service` | — | — | — (E2: 에스컬레이션) |
+
+- **필수** = 해당 도구를 호출하지 않고 저장하면 `save_draft`가 거부
+- ACCOUNT/NEWSLETTER/FEEDBACK 계열은 **절차 안내**라 정책 조항 인용이 필요 없다 — 여기까지 인용을 강제하면 없는 근거를 만들어내는 유인이 생긴다
+
+### 3.3 파라미터 초깃값
+
+**전부 초깃값이며 측정 후 조정한다.** 환경변수로 노출해 코드 수정 없이 바꿀 수 있게 한다.
+
+| 파라미터 | 초깃값 | 근거 |
+|---|---|---|
+| `TRIAGE_CONFIDENCE_THRESHOLD` | **0.70** | LLM self-reported confidence는 과신 경향이 있어 낮게 잡으면 에스컬레이션이 폭증한다. 0.70에서 시작해 **캘리브레이션 곡선(정분류/오분류 confidence 분포)** 측정 후, 에스컬레이션 Recall ≥ 0.9를 만족하는 **최소** 임계값으로 조정 |
+| `REPLY_TURN_CAP` | **12** | agent 노드 내부 LLM 왕복 상한. 정상 경로는 정책검색 1–2 + 주문조회 1 + 형식검증 1 + 저장 1 + 제출 1 ≈ 6회. 자기교정 여유를 포함해 2배. (분필은 문항 세트라 14였음) |
+| `REPLY_BUDGET` | **2** | validate 미달 시 agent 재시도 횟수. 단일 초안이라 3회차가 유의미하게 나아진다는 근거가 없다 — 그럴 바엔 에스컬레이션이 HITL 원칙과 일관 |
+| `MALFORMED_TOOL_CALL_STREAK` | **3** | tool_call 형식이 깨졌을 때 재작성 요청 연속 허용 횟수(분필과 동일). turn cap이 항상 최종 방어선 |
+| `JUDGE_PASS_POLICY` | **≥ 4 / 5** | validate 통과 조건 |
+| `JUDGE_PASS_TONE` | **≥ 4 / 5** | validate 통과 조건 |
+| 청킹 크기 | **300–500 토큰, overlap 50** | 조항 단위를 우선하되 500 초과 시 문장 경계로 분할. 각 청크 앞에 **조항 헤더를 반복 삽입**한다(인용 정확도가 게이트 ④에 직결) |
+| 검색 `top_k` | **정책 3, rerank 전 10** | 분필과 동일 |
+
+### 3.4 Judge 루브릭 · 출력 스키마
+
+`app/modules/reply/judge.py` — 런타임 `judge_node`와 오프라인 eval이 **같이 호출**한다.
+
+```json
+{
+  "policy_compliance": 1,
+  "tone": 1,
+  "violations": [
+    {"type": "unsupported_commitment", "span": "...", "severity": "high"}
+  ],
+  "reasoning": "..."
+}
+```
+
+| 필드 | 척도 | 정의 |
+|---|---|---|
+| `policy_compliance` | 1–5 | 초안의 주장이 **인용된 정책 조항·도구 결과로 뒷받침되는가**. 5=전부 뒷받침, 3=일부 미확인, 1=정책과 모순 |
+| `tone` | 1–5 | CS 응대 톤 적절성(공감·명확성·격식). 5=바로 발송 가능, 3=수정 필요, 1=부적절 |
+| `violations[].type` | enum | `unsupported_commitment` / `policy_contradiction` / `missing_citation` / `inappropriate_tone` / `pii_leak` / `out_of_scope_promise` |
+| `violations[].severity` | enum | `high` / `medium` / `low` |
+
+**validate 통과 조건**: `policy_compliance ≥ 4` **AND** `tone ≥ 4` **AND** `high` severity 위반 0건.
+
+> 루브릭 텍스트는 `prompts/judge_*.md`에 두고 버전 관리한다. 루브릭 변경은 **단독 커밋**으로 분리한다 — 코드와 섞이면 점수 변화의 원인을 분리할 수 없다.
+
+---
+
+## 4. 데이터
+
+### 4.1 Bitext 데이터셋 (실측 검증 — 2026-07-28)
+
+[Bitext Customer Support LLM Chatbot Training Dataset](https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset)
+
+| 항목 | 확인된 값 |
+|---|---|
+| 규모 | **26,872** 질문-답변 쌍 (인텐트당 약 1,000건 — **분포 균등**) |
+| 인텐트 | **27개** |
+| 카테고리 | **10개** — `ACCOUNT` `CANCELLATION_FEE` `DELIVERY` `FEEDBACK` `INVOICE` `NEWSLETTER` `ORDER` `PAYMENT` `REFUND` `SHIPPING_ADDRESS` |
+| 컬럼 | `flags` · `instruction` · `category` · `intent` · `response` |
+| **언어** | **영어 전용** |
+| 라이선스 | **CDLA-Sharing-1.0** (share-alike) |
+| 엔티티 | `{{Order Number}}` 형식의 플레이스홀더, 약 30종 |
+| 성격 | hybrid synthetic — NLG로 확장 후 전산언어학자가 큐레이션 |
+
+**27개 인텐트 전체**
+`create_account` `delete_account` `edit_account` `switch_account` `recover_password` `registration_problems` `check_cancellation_fee` `delivery_options` `delivery_period` `complaint` `review` `check_invoice` `get_invoice` `newsletter_subscription` `cancel_order` `change_order` `place_order` `track_order` `check_payment_methods` `payment_issue` `check_refund_policy` `get_refund` `track_refund` `change_shipping_address` `set_up_shipping_address` `contact_human_agent` `contact_customer_service`
+
+**`flags` 코드** — 언어 생성 태그. 파이프라인이 실제로 사용한다.
+
+| 그룹 | 코드 |
+|---|---|
+| 어휘 | `M` 형태 변화 · `L` 동의어 |
+| 구문 | `B` 기본 · `I` 의문 · `C` 등위 · `N` 부정 |
+| 레지스터 | `P` 정중 · `Q` 구어 · **`W` 공격적 표현** |
+| 문체 | `K` 키워드 · `E` 축약 · `Z` 오타 |
+
+- **`W`는 에스컬레이션 조건 E4**로 직접 쓴다
+- `P`/`Q`/`Z`는 톤·강건성 평가의 **층화 샘플링 축**으로 쓴다(정중한 티켓만으로 평가하면 톤 점수가 낙관적으로 나온다)
+
+### 4.2 ⚠️ `response` 컬럼을 정답셋으로 쓰지 않는다
+
+Bitext의 `response`는 **플레이스홀더가 박힌 범용 템플릿**이며, **우리가 합성할 정책 문서에 근거하지 않는다.** 이걸 초안 품질의 ground truth로 쓰면 "우리 정책에 맞는 답"이 아니라 "Bitext 템플릿과 비슷한 답"을 평가하게 된다.
+
+| 용도 | 허용 |
+|---|---|
+| 영어 CS 문체 참고(few-shot 예시 후보) | ✅ |
+| 인텐트별 응답 구조 파악 | ✅ |
+| **초안 품질/정책 준수 정답셋** | ❌ **금지** |
+| **RAG 코퍼스 적재** | ❌ **금지** |
+
+초안 품질은 우리가 만든 정책 문서 기준으로 **Judge + 사람 라벨**이 평가한다(6절).
+
+### 4.3 티켓 하이드레이션 (플레이스홀더 → 실제 값)
+
+Bitext의 `{{Order Number}}`는 **문자열 리터럴**이지 실제 값이 아니다. 그대로 쓰면 `lookup_order`가 조회할 대상이 없다. 따라서 **합성 DB를 먼저 만들고, 그 값을 플레이스홀더에 주입**한다.
+
+```
+1. scripts/build_synthetic_data.py  →  shop.db (주문·고객) + 정책 문서
+2. scripts/hydrate_tickets.py       →  Bitext instruction의 {{...}} 를
+                                        shop.db 의 실제 레코드로 치환
+                                        (시드 고정, 티켓↔주문 매핑 기록)
+3. 결과: data/synthetic/tickets.jsonl
+         {ticket_id, text, intent, category, flags, order_id, customer_id}
+```
+
+- **의도적으로 일부는 존재하지 않는 주문번호로 채운다** → 에스컬레이션 E6 경로를 실제로 발생시켜야 테스트가 된다(초깃값 10%)
+- 하이드레이션 매핑은 기록해 둔다 — 골든셋 정답 산출에 필요
+
+### 4.4 합성 데이터
+
+| 항목 | 내용 |
+|---|---|
+| 정책 문서 | 가상 이커머스사(가칭 `Northwind Retail`) 영문 규정 — 반품/교환/환불/배송/취소수수료/보증/멤버십 등급. **각 조항에 번호를 부여**(`RET-03`, `SHIP-07` …)해 인용 가능하게 |
+| 주문 DB | `orders(order_id, customer_id, status, carrier, tracking_no, ordered_at, delivered_at, amount, currency)` |
+| 고객 DB | `customers(customer_id, tier, joined_at, country)` — tier: `standard` / `plus` / `vip` |
+| 재현성 | 시드 고정. `scripts/build_synthetic_data.py`로 언제든 재생성 |
+
+**정책 문서는 tier·기한 분기를 반드시 포함한다.** 그래야 `check_customer_tier`가 장식이 아니라 실제로 답을 바꾸는 도구가 된다(예: `RET-03` 반품 기한 standard 14일 / plus 30일 / vip 60일).
+
+### 4.5 데이터 취급 규칙
+
+- **`data/raw/`는 커밋하지 않는다.** `.gitignore`로 제외하고 `scripts/download_bitext.py`로 재현한다. CDLA-Sharing-1.0은 재배포 시 동일 라이선스·출처 표기를 요구하므로, 레포에 원본을 담지 않는 편이 단순하다
+- README와 `data/README.md`에 **출처·라이선스를 명시**한다
+- **⛔ 절대 금지**: 실제 고객 문의, 실제 주문 정보, 식별 가능한 개인정보 수집
+
+**보호 경로** (사람 승인 없이 에이전트가 수정 불가 — `.claude/hooks/`가 강제):
+`data/raw/` · `evals/golden/` · `evals/runners/` · `.env`
+
+---
+
+## 5. PII 마스킹 정책
+
+CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마스킹하면 도구가 동작하지 않는다.**
+
+| 구분 | 대상 | 처리 |
+|---|---|---|
+| **마스킹** (개인 식별정보) | 이메일 · 전화번호 · 신용카드번호 · 우편주소 · 인명 | `{{EMAIL}}` `{{PHONE}}` `{{CARD}}` `{{ADDRESS}}` `{{NAME}}` 토큰으로 치환 |
+| **유지** (내부 식별자) | 주문번호 · 송장번호 · 고객ID | 그대로 — `lookup_order`가 입력으로 써야 함 |
+
+- 마스킹은 **모델 호출 이전**에 수행한다. 순서를 바꾸지 않는다
+- 초안에 마스킹 토큰이 남는 것은 **정상**이다. 상담원이 검토 단계에서 복원한다("상담원 최종 책임" 원칙과 일관)
+- `save_draft` 게이트 ①이 검사하는 것은 **마스킹되지 않은 원본 PII 패턴**의 출현이다
+- 신용카드번호는 Luhn 검증을 통과하는 패턴만 카드로 판정한다(오탐 억제)
+
+---
+
+## 6. 평가 설계
+
+**원칙**: ① LLM Judge는 사람 라벨과 먼저 일치율을 검증한다 ② 정량(함수)/정성(Judge·사람)을 분리한다 ③ 골든셋은 코드에 하드코딩하지 않고 `evals/golden/*.jsonl`로 외부화한다.
+
+### 6.1 모듈 ① Triage
+
+| 지표 | 판정 | 통과 기준(시작값) |
+|---|---|---|
+| 인텐트 정확도 | 함수 (Bitext 라벨) | ≥ 0.85 |
+| 인텐트 macro-F1 | 함수 | ≥ 0.80 |
+| 카테고리 정확도 | 함수 | ≥ 0.92 |
+| confidence 캘리브레이션 | 함수 | 오분류 건의 confidence 분포가 정분류보다 유의하게 낮은가 |
+
+> **macro-F1을 함께 보는 이유**: Bitext는 인텐트당 약 1,000건으로 **분포가 균등**하므로 불균형 보정 목적은 아니다. 목적은 **특정 인텐트의 국소적 붕괴 탐지**다 — 의미가 인접한 쌍(`check_invoice`↔`get_invoice`, `check_refund_policy`↔`get_refund`, `change_shipping_address`↔`set_up_shipping_address`)에서 한쪽이 무너져도 전체 accuracy는 거의 안 움직인다. **혼동행렬을 함께 리포트해 인접 쌍 혼동을 별도로 확인한다.**
+
+### 6.2 모듈 ② Reply Agent
+
+| 우선 | 지표 | 판정 | 통과 기준(시작값) |
+|---|---|---|---|
+| 🔴 | PII 마스킹 누락률(FN) | 함수 | **0** |
+| 🔴 | 정책 위반 검출 Recall | 함수(골든셋) | ≥ 0.95 |
+| 🔴 | 정책 위반 검출 F1 | 함수 | 참고값 |
+| 🔴 | 근거 없는 확약률 | 함수(게이트 로그) | **0** |
+| 🟡 | 톤 적절성 | LLM Judge | 5점 평균 ≥ 4.0 |
+| 🟡 | **Judge 신뢰도 (Cohen's κ)** | 사람 라벨 대비 | ≥ 0.4 |
+| 🟢 | 정책 RAG Recall@5 / MRR | 함수 | R@5 ≥ 0.8 |
+| 🟢 | 과정: 평균 반복수·도구 호출 수·latency | 함수 | 예산 내 수렴 |
+| ⭐ | **에스컬레이션 Recall** | 함수(골든셋) | ≥ 0.9 |
+| ⭐ | 에스컬레이션 FP율 | 함수 | 참고값 — 트레이드오프는 사람 판단 |
+| 🏁 | 상담원 무수정 채택률 | 사람 | 북극성 |
+
+**에스컬레이션 Recall이 이 프로젝트 고유 지표다.** "사람이 개입해야 했던 케이스를 실제로 넘겼는가". FN(넘겼어야 하는데 자동 초안을 낸 것)이 FP보다 훨씬 위험하므로 Recall만 게이트로 두고 FP율은 참고값으로 관리한다.
+
+**Judge 신뢰도를 먼저 검증한다.** κ가 목표 미달이면 그 Judge 점수로 통과/재시도를 결정하지 않는다. 못 믿을 Judge 위에 다른 수치를 쌓으면 전부 다시 해야 한다.
+
+### 6.3 골든셋 6종
+
+| 파일 | 규모 | 라벨 | 만드는 법 |
+|---|---|---|---|
+| `triage_golden.jsonl` | 200 | intent · category | Bitext에서 층화 샘플링(인텐트당 약 7–8건, `flags` 다양성 확보) |
+| `pii_golden.jsonl` | 50 | PII 스팬 위치·유형 | 하이드레이션된 티켓에 **영문 PII를 의도적으로 주입**하고 정답 스팬 기록 |
+| `policy_violation_golden.jsonl` | 50 | 위반 유형·스팬 | 초안에 위반을 의도적으로 심음(무근거 확약 20 / 정책 모순 15 / 인용 누락 10 / 범위 밖 약속 5) |
+| `tone_golden.jsonl` | 30 | 5점 척도(사람) | Phase 6 완료 후 생성된 실제 초안에 직접 라벨링 |
+| `escalation_golden.jsonl` | 40 | `should_escalate` + 해당 조건 ID | E1–E8 각 조건을 재현하는 케이스 + 에스컬레이션 불필요한 대조군 |
+| `retrieval_golden.jsonl` | 30 | 질의 → 정답 조항 번호 | 합성 정책 문서에서 직접 작성 |
+
+> `pii_golden`이 필요한 이유: Bitext는 이미 익명화돼 있어 **마스킹할 실제 PII가 없다.** 🔴 지표를 측정하려면 주입한 테스트셋이 반드시 있어야 한다.
+
+> ⚠️ **분필에서 얻은 함정**: "eval이 존재하는가"와 "내 변경이 eval이 실제로 exercise하는 경로에 있는가"는 별개다. 분필은 생성 프롬프트를 개선했는데 eval 수치가 전혀 변하지 않았고, 원인은 eval이 하드코딩된 고정 출력을 채점하는 구조였기 때문이다. **CS eval은 실제로 파이프라인을 돌려 새 초안을 생성한 뒤 채점하도록 설계한다.**
+
+### 6.4 실행 비용
+
+**개발 루프 = 스모크셋(20건), 전체셋 = 사람이 직접 실행.** `--full`은 훅으로 차단한다.
+
+생성 모델 `claude-opus-5` 기준($5 / $25 per MTok) 개략 추정:
+
+| 항목 | 토큰(입력/출력) | 건당 | 비고 |
+|---|---|---|---|
+| Triage 1건 | ~1K / ~0.2K | ≈ $0.010 | |
+| 초안 1건(재시도 없음) | ~8K / ~1.5K | ≈ $0.078 | 멀티턴 누적 포함 |
+| 초안 1건(평균 재시도 반영) | ×1.5 | ≈ $0.12 | |
+| Judge 1건 | ~3K / ~0.5K | **요금 확인 후 갱신** | 벤더 요금 미확정 |
+
+| 실행 단위 | 개략 비용 |
+|---|---|
+| 스모크셋(초안 20건) | ≈ $2.5 + Judge |
+| 전체 reply eval(50건) | ≈ $6 + Judge |
+| 전체 triage eval(200건) | ≈ $2 |
+| **전체 1회 합계** | **≈ $10 내외 + Judge** |
+
+→ **billing alarm은 이 수치를 기준으로 건다.** 프롬프트 캐싱을 적용하면 반복 실행의 입력 비용이 크게 줄어든다(시스템 프롬프트·정책 청크가 요청 간 동일) — 최적화 항목으로 남겨둔다.
+
+---
+
+## 7. API 계약
+
+| 메서드 | 경로 | 요청 | 응답 |
+|---|---|---|---|
+| `GET` | `/health` | — | `{"status": "ok"}` (인증 불필요) |
+| `POST` | `/triage` | `{ticket_text, flags?}` | `{intent, category, confidence, requires_human, reason}` |
+| `POST` | `/reply` | `{ticket_text, customer_id?, flags?}` | `{outcome, draft?, cited_policies?, tools_used?, escalation_reason?, judge_result?}` |
+| `POST` | `/reply/stream` | 동일 | SSE — 진행 이벤트 스트리밍 |
+
+- `/health` 외 전 엔드포인트는 `X-API-Key: $CS_API_KEY` 서버 간 인증 요구
+- SSE 이벤트: `{"status": "progress"|"done"|"error", ...}`. 내부 예외 상세는 노출하지 않는다
+- 동시 요청 제한: `asyncio.Semaphore(2)` — 획득 실패 시 429 (분필과 동일)
+
+---
+
+## 8. 기술 스택
 
 | 구분 | 선택 |
 |---|---|
@@ -146,103 +447,57 @@ class ReplyState(TypedDict):
 | 벡터스토어 | ChromaDB + Rerank (BGE-reranker) |
 | 임베딩 | BGE-M3 (CPU) |
 | 생성 LLM | **Anthropic `claude-opus-5`** (기본, `ChatAnthropic`) |
-| Judge LLM | **OpenAI `gpt-5.6-luna`** (기본) — 생성과 **다른 벤더**. 채택은 Phase 7 신뢰도 측정으로 확정 |
+| Judge LLM | **OpenAI `gpt-5.6-luna`** — 생성과 **다른 벤더**. 선행 프로젝트 채택값이며 **본 프로젝트에서 κ 재검증 후 확정** |
 | 커스텀 어댑터 | Ollama / vLLM 자체 호스팅 / RunPod 서버리스 (`BaseChatModel` 직접 상속) |
-| 합성 데이터 DB | SQLite (주문·고객) |
+| 합성 데이터 DB | SQLite |
 | 프론트엔드 | Next.js (상담원 검토 UI) |
 | 트레이싱·eval | LangSmith / Ragas |
 | 배포 | Docker + Caddy HTTPS (클라우드 VM) |
 
 **모델 선정 근거 (초기값, 측정 후 갱신)**
 
-- 생성 = `claude-opus-5`: 티켓 처리는 멀티턴 ReAct + 도구 인자 정확도가 관건이고, 잘못된 초안의 비용(고객에게 나가는 답변)이 크다. 비용이 문제가 되면 `claude-sonnet-5`로 내리고 eval로 회귀 여부를 확인한다 — 내리는 판단도 **측정 후에** 한다.
-- Judge = 크로스 벤더: "생성 모델이 자기 글을 자기가 채점하지 않는다"의 가장 강한 형태. 같은 벤더의 다른 모델보다 상관성이 낮아 독립적인 판정에 가깝다.
-- 모델 비교·확정 데이터는 별도 `MODEL_SELECTION.md`에 누적한다.
+- 생성 = `claude-opus-5`: 멀티턴 ReAct + 도구 인자 정확도가 관건이고, 잘못된 초안의 비용(고객에게 나가는 답변)이 크다. 비용이 문제가 되면 `claude-sonnet-5`로 내리고 eval로 회귀 여부를 확인한다 — 내리는 판단도 **측정 후에** 한다
+- Judge = 크로스 벤더: "생성 모델이 자기 글을 자기가 채점하지 않는다"의 가장 강한 형태
+- 모델 비교·확정 데이터는 `MODEL_SELECTION.md`에 누적
 
-> 사용하는 모든 모델 ID는 정확한 문자열로만 쓴다. 날짜 접미사를 임의로 붙이지 않는다.
+> 모델 ID는 정확한 문자열로만 쓴다. 날짜 접미사를 임의로 붙이지 않는다.
 
----
+### 환경변수
 
-## 4. 데이터
-
-| 항목 | 출처 | 방법 | 용도 |
-|---|---|---|---|
-| 고객 문의 + 인텐트 라벨 | **Bitext Gen AI Chatbot Customer Support Dataset** (Kaggle/HuggingFace) | 다운로드 | 에이전트 입력 소스 + triage eval ground truth |
-| 정책 문서(반품·교환·환불·배송·보증) | **직접 합성** | 가상 이커머스사 규정 문서 작성 | `search_policy` RAG 코퍼스 |
-| 주문·고객 레코드 | **직접 합성** | 스크립트 생성 | `lookup_order` / `check_customer_tier` |
-| 정책 위반 답변 골든셋 | **직접 합성** | 위반을 의도적으로 심은 답변 | 위반 검출 Recall/F1 평가 |
-| 톤 라벨 골든셋 | 생성 답변에 **사람이 직접 라벨링** | 5점 척도 | Judge 신뢰도(κ) 검증 |
-
-**Bitext 데이터셋 정보**: 약 26,872 질문-답변 쌍, 27개 인텐트, 상위 카테고리 = 결제/기술문제/계정관리. 엔티티 슬롯 + 톤(정중체/격식체) 주석 포함. RAG 코퍼스(정책 문서)는 이 데이터셋에 **없으므로** 합성한다.
-
-**⛔ 절대 금지**: 실제 고객 문의, 실제 주문 정보, 식별 가능한 개인정보 수집.
-
-**보호 경로** (사람 승인 없이 에이전트가 수정 불가 — `.claude/hooks/`가 강제):
-- `data/raw/` — Bitext 원본
-- `evals/golden/` — 정답셋
-- `evals/runners/` — eval 실행 스크립트 + 임계값 체크
-
----
-
-## 5. 평가 설계
-
-**원칙**: ① LLM Judge는 사람 라벨과 먼저 일치율을 검증한다 ② 정량(함수)/정성(Judge·사람)을 분리한다 ③ 골든셋은 코드에 하드코딩하지 않고 `evals/golden/*.jsonl`로 외부화한다.
-
-### 모듈 ① Triage
-
-| 지표 | 판정 | 통과 기준(시작값) |
+| 변수 | 설명 | 기본값 |
 |---|---|---|
-| 인텐트 정확도 | 함수 (Bitext 라벨) | ≥ 0.85 |
-| 인텐트 macro-F1 | 함수 | ≥ 0.80 (희소 인텐트 확인용) |
-| 카테고리 정확도 | 함수 | ≥ 0.92 |
-| confidence 캘리브레이션 | 함수 | 오분류 건의 confidence가 정분류보다 유의하게 낮은가 |
-
-> macro-F1을 같이 보는 이유: 27개 인텐트 분포가 고르지 않아 accuracy만 보면 다수 인텐트에 가려진다.
-
-### 모듈 ② Reply Agent
-
-| 계층 | 지표 | 판정 | 통과 기준(시작값) |
-|---|---|---|---|
-| 🔴 안전 | PII 마스킹 누락률(FN) | 함수 | **0** |
-| 🔴 안전 | 정책 위반 검출 Recall | 함수(골든셋) | ≥ 0.95 |
-| 🔴 안전 | 정책 위반 검출 F1 | 함수 | 참고값 |
-| 🔴 안전 | 근거 없는 확약률 | 함수(게이트 로그) | **0** |
-| 🟡 품질 | 톤 적절성 | LLM Judge | 5점 평균 ≥ 4.0 |
-| 🟡 품질 | Judge 신뢰도 (Cohen's κ) | 사람 라벨 대비 | ≥ 0.4 |
-| 🟢 검색 | 정책 RAG Recall@5 / MRR | 함수 | R@5 ≥ 0.8 |
-| 🟢 과정 | 평균 반복수 · 도구 호출 수 · latency | 함수 | 예산 내 수렴 |
-| ⭐ 라우팅 | **에스컬레이션 Recall** | 함수(골든셋) | ≥ 0.9 |
-| ⭐ 라우팅 | 에스컬레이션 FP율(과잉 에스컬레이션) | 함수 | 참고값 — 트레이드오프는 사람 판단 |
-| 🏁 종단 | 상담원 무수정 채택률 | 사람 | 북극성 |
-
-**에스컬레이션 Recall이 이 프로젝트 고유 지표다.** "사람이 개입해야 했던 케이스를 실제로 넘겼는가". FN(넘겼어야 하는데 자동 초안을 낸 것)이 FP보다 훨씬 위험하므로 Recall을 게이트로, FP율은 참고값으로 둔다.
-
-**Judge 신뢰도를 먼저 검증한다.** 톤·정책 준수는 주관 판정이 섞여 있어, Judge 점수를 게이트로 쓰기 전에 사람 라벨과의 κ를 먼저 측정한다. κ가 목표 미달이면 그 Judge 점수로 통과/재시도를 결정하지 않는다.
-
-**측정 결과는 `EVAL.md`에 이력으로 누적한다.** 모델·프롬프트를 바꿀 때마다 기록한다.
-
-> ⚠️ **분필에서 얻은 함정 하나**: "eval이 존재하는가"와 "내 변경이 eval이 실제로 exercise하는 경로에 있는가"는 별개다. 분필은 생성 프롬프트를 개선했는데 eval 수치가 전혀 변하지 않았고, 원인은 eval이 하드코딩된 고정 출력을 채점하는 구조였기 때문이다. **CS eval은 실제로 파이프라인을 돌려 새 초안을 생성한 뒤 채점하도록 설계한다.**
-
-**개발 루프 = 스모크셋(20~50건), 전체셋 = 사람이 직접 실행.** eval은 실제 API 비용이 나가므로 `--full`은 훅으로 차단한다.
+| `CS_API_KEY` | Next.js → FastAPI 서버 간 인증 (양쪽 동일한 긴 무작위 값) | 필수 |
+| `LLM_BACKEND` | 생성 백엔드 — `anthropic` / `openai` / `ollama` / `runpod` | `anthropic` |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 생성 모델 | — / `claude-opus-5` |
+| `JUDGE_BACKEND` | Judge 백엔드 — 생성과 **독립 전환**. 키 없거나 실패 시 fail-fast | `openai` |
+| `OPENAI_API_KEY` / `OPENAI_JUDGE_MODEL` | Judge 모델 | — / `gpt-5.6-luna` |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | 로컬 개발 백엔드 | `http://localhost:11434` / — |
+| `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` | 커스텀 어댑터 경로 (Phase 8) | — |
+| `CHROMA_PERSIST_DIR` | ChromaDB 저장 경로 | `./chroma_db` |
+| `BGE_EMBED_MODEL` / `BGE_RERANK_MODEL` | 임베딩·리랭킹 | `BAAI/bge-m3` / `BAAI/bge-reranker-base` |
+| `SHOP_DB_PATH` | 합성 주문·고객 DB | `./data/synthetic/shop.db` |
+| `TRIAGE_CONFIDENCE_THRESHOLD` | 에스컬레이션 E1 임계값 | `0.70` |
+| `REPLY_BUDGET` / `REPLY_TURN_CAP` | 재시도·턴 상한 | `2` / `12` |
+| `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT` | LangSmith (기본 비활성, 옵트인) | `false` / — / `cs-assistant` |
 
 ---
 
-## 6. 보안 · 개인정보
+## 9. 보안 · 개인정보
 
-- **PII 마스킹은 입력 단계에서, 외부/모델 호출 이전에** 수행한다. 순서를 바꾸지 않는다
-- 실제 고객 데이터 미사용 — 전부 공개 데이터셋 + 합성
+- **PII 마스킹은 입력 단계에서, 외부/모델 호출 이전에** 수행한다(5절). 순서를 바꾸지 않는다
+- 실제 고객 데이터 미사용 — 공개 데이터셋 + 합성
 - 사용자 입력(티켓 본문)은 **비저장**. 영구 저장은 공개/합성 코퍼스뿐
 - **로그·캐시에 PII 금지**
-- 시크릿은 `.env`(gitignore). `.env.example`만 커밋. 코드에 하드코딩 금지
-- 초안 출력에 **"상담원 최종 책임(보조수단)" 고지** 표시 — 분필의 "교사 최종 책임"과 동일 위치
-- 감사 로그: 어떤 티켓에 어떤 도구가 호출되고 어떤 정책이 인용됐는지 기록(PII 제외)
-- LangSmith 트레이싱은 **마스킹 이후** 단계만. 기본값 비활성(`LANGCHAIN_TRACING_V2=false`), 옵트인
+- 시크릿은 `.env`(gitignore). `.env.example`만 커밋. 코드 하드코딩 금지
+- 초안 출력에 **"상담원 최종 책임(보조수단)" 고지** 표시
+- 감사 로그: 티켓별 도구 호출·인용 정책·outcome 기록(PII 제외)
+- LangSmith 트레이싱은 **마스킹 이후** 단계만. 기본값 비활성, 옵트인
 
 > ⚠️ **외부 전송 트레이드오프 (명시적으로 수용)**: `JUDGE_BACKEND=openai`(기본값)에서는 초안 생성마다 티켓 본문과 초안이 OpenAI로 전송된다. PII 마스킹은 이 호출 이전에 이미 적용돼 있다. 전부 로컬로 처리하려면 `JUDGE_BACKEND=local`로 전환한다 — 단 그 경우 Judge 신뢰도가 재검증 대상이 된다.
 
 ---
 
-## 7. 벤더 연동 전략 — 정식 지원 vs 커스텀 어댑터
+## 10. 벤더 연동 전략 — 정식 지원 vs 커스텀 어댑터
 
 이 프로젝트의 두 번째 축이다. **두 경로를 모두 구현하고, 판단 기준을 문서로 남긴다.**
 
@@ -275,9 +530,7 @@ app/common/llm/
 - 메시지 변환 양방향 — LangChain `BaseMessage` ↔ 벤더 포맷 (role 매핑, `tool_calls` 구조 변환, `tool_call_id` 처리)
 - 폴링 루프 — `/run` 제출 후 **동일한 job_id를 폴링**. 제출 응답을 못 받았다고 무작정 재제출하면 중복 실행이 된다
 
-→ 이렇게 하면 "라이브러리를 갖다 쓸 줄 안다"를 넘어 "**LangChain 내부 구조를 이해하고 확장할 수 있다**"를 증명한다.
-
-**산출물**: `VENDOR_INTEGRATION.md` — 언제 정식 통합을 쓰고 언제 커스텀 어댑터가 필요한지, 두 경로의 실제 코드 차이와 함께 정리.
+**산출물**: `VENDOR_INTEGRATION.md`
 
 ### 파이프라인 규칙
 
@@ -285,9 +538,9 @@ app/common/llm/
 
 ---
 
-## 8. 개발 하네스 · 루프 (요약)
+## 11. 개발 하네스 · 루프 (요약)
 
-전체 설계는 `CS_CLAUDE_CODE_HARNESS_LOOP.md`. 여기서는 제품 설계와 맞물리는 부분만.
+전체 설계는 `CS_CLAUDE_CODE_HARNESS_LOOP.md`.
 
 **핵심 원칙**: eval의 정답(ground truth)과 eval 실행 코드는 **에이전트가 수정할 수 없어야 한다.**
 
@@ -309,60 +562,55 @@ app/common/llm/
 | B. RAG 품질 | Recall@5 ≥ 목표 | 2 | 청킹 전략 선택지 제시 후 사람 결정 |
 | C. 가드레일 | 위반 F1 ≥ 목표 & 톤 ≥ 임계 | 2 | **반드시 사람 리뷰** |
 
-루프 C는 **자동 종료를 만들지 않는다.** 정책 위반 검출의 FP/FN 균형은 제품 판단이지 기술 판단이 아니다. 제품 쪽 HITL 설계와 같은 논리를 개발 워크플로우에도 적용한다.
+루프 C는 **자동 종료를 만들지 않는다.** 정책 위반 검출의 FP/FN 균형은 제품 판단이지 기술 판단이 아니다.
 
 > 종료 조건보다 **포기 조건**이 설계하기 어렵고 더 중요하다. 3회 실패 시 멈추고 "무엇을 가정했고 무엇이 틀렸는지"를 보고하게 한다.
 
-**대칭성이 이 프로젝트의 서사다**: 에이전트 제품에 가드레일을 넣는 것과, 에이전트로 개발하는 과정에 가드레일을 넣는 것은 같은 문제다. 둘 다 모델의 협조에 의존하지 않는 시스템 레벨 강제가 필요하다.
+**대칭성이 이 프로젝트의 서사다**: 에이전트 제품에 가드레일을 넣는 것과, 에이전트로 개발하는 과정에 가드레일을 넣는 것은 같은 문제다.
 
 ---
 
-## 9. 레포 구조
+## 12. 레포 구조
 
 ```
 cs-assistant/
-├── CLAUDE.md                       # 에이전트 행동 규칙 (Layer 1)
-├── DESIGN.md                       # 이 문서
-├── PROMPTS.md                      # Phase별 빌드 프롬프트
-├── EVAL.md                         # 평가 결과 이력
-├── VENDOR_INTEGRATION.md           # 정식 통합 vs 커스텀 어댑터 (Phase 8)
-├── HARNESS_ENGINEERING.md          # 하네스/루프 회고 (Phase 10)
-├── MODEL_SELECTION.md              # 모델 비교 데이터
+├── CLAUDE.md · DESIGN.md · PROMPTS.md · README.md
+├── EVAL.md · VENDOR_INTEGRATION.md · HARNESS_ENGINEERING.md · MODEL_SELECTION.md
 ├── .claude/
 │   ├── settings.json               # 공유 훅/권한 (커밋)
 │   ├── settings.local.json         # 개인 오버라이드 (gitignore)
 │   ├── hooks/                      # block_protected_paths.py 등 (Python)
-│   ├── rules/                      # eval-integrity.md, dev-loop.md
+│   ├── rules/                      # eval-integrity.md, dev-loop.md, prompt-change-policy.md
 │   ├── agents/                     # eval-reviewer.md, prompt-critic.md
-│   └── agent-memory/dev/MEMORY.md  # 반복 실패 패턴
+│   └── agent-memory/dev/MEMORY.md  # 반복 실패 패턴 (gitignore)
 ├── app/
-│   ├── main.py                     # FastAPI
+│   ├── main.py                     # FastAPI (7절 API 계약)
 │   ├── common/
-│   │   ├── llm/                    # 벤더 추상화 (7절)
+│   │   ├── llm/                    # 벤더 추상화 (10절)
 │   │   ├── rag/                    # 파싱·청킹·임베딩·리랭킹·ChromaDB
-│   │   └── privacy.py              # PII 마스킹
+│   │   └── privacy.py              # PII 마스킹 (5절)
 │   └── modules/
-│       ├── triage/                 # 모듈 ①
-│       └── reply/                  # 모듈 ② graph.py / tools.py / judge.py / state.py
-├── prompts/                        # ★ 프롬프트 = 버전 관리 대상, 단독 커밋
+│       ├── triage/                 # classifier.py
+│       └── reply/                  # graph.py / tools.py / judge.py / state.py / routing.py
+├── prompts/                        # ★ 프롬프트·루브릭 = 버전 관리 대상, 단독 커밋
 ├── evals/
-│   ├── golden/                     # ★ 보호 경로
+│   ├── golden/                     # ★ 보호 경로 — 골든셋 6종 (6.3절)
 │   ├── runners/                    # ★ 보호 경로 (check_thresholds.py 포함)
 │   └── reports/                    # 실행 결과 (gitignore)
 ├── data/
-│   ├── raw/                        # ★ 보호 경로 — Bitext 원본
-│   └── synthetic/                  # 합성 정책 문서·주문 DB (생성물)
+│   ├── README.md                   # 출처·라이선스 명시
+│   ├── raw/                        # ★ 보호 경로 + gitignore — Bitext 원본
+│   └── synthetic/                  # 정책 문서·shop.db·tickets.jsonl (생성물)
 ├── frontend/                       # Next.js 상담원 검토 UI
-├── tests/
-├── scripts/
+├── tests/ · scripts/
 └── .env.example
 ```
 
-★ = 보호 경로(사람 승인 없이 에이전트가 수정 불가)
+★ = 보호 경로
 
 ---
 
-## 10. 배포
+## 13. 배포
 
 **구성: 단일 클라우드 VM + Docker + Caddy HTTPS.**
 
@@ -374,29 +622,33 @@ cs-assistant/
 ```
 
 - 생성·Judge 모두 **관리형 API**라 GPU 서버리스가 필수 경로가 아니다 → 분필 대비 인프라가 단순하고 운영비가 낮다
-- **RunPod 서버리스는 "커스텀 어댑터 경로 데모"용으로만** 붙인다(상시 운영 아님). `LLM_BACKEND=runpod`로 전환해 동작을 보여주는 용도
-- 서버 간 인증: Next.js → FastAPI `CS_API_KEY` 헤더
-- **billing alarm 필수** — LLM API는 종량제다
+- **RunPod 서버리스는 "커스텀 어댑터 경로 데모"용으로만** 붙인다(상시 운영 아님)
+- 서버 간 인증: Next.js → FastAPI `CS_API_KEY`
+- **billing alarm 필수** — 6.4절 비용 추정을 기준으로 설정
 - 배포 사다리: Dockerfile → docker-compose(로컬 검증) → VM 배포 → Caddy HTTPS → GitHub Actions CI
 
 **CI = 최종 게이트**
 
 ```yaml
 # .github/workflows/ci.yml — 모델 호출 없는 경량 CI (매 PR 블로킹)
-- pytest tests/ -q                     # 순수 로직 유닛테스트 (마스킹·게이트 등)
+- pytest tests/ -q                     # 순수 로직 유닛테스트
 - 백엔드 import 스모크 + 프론트 lint/build
 ```
 
-전체 eval은 CI에서 자동으로 돌리지 않는다 — 생성·채점 결과의 변동성이 자동 블로킹 게이트에 적합하지 않고, Judge 비용이 실제로 나간다. `evals/runners/check_thresholds.py`는 **사람이 실행**하고, 그 스크립트 자체도 보호 경로에 둔다(임계값을 낮춰 통과시키는 경로 차단).
+전체 eval은 CI에서 자동으로 돌리지 않는다 — 생성·채점 결과의 변동성이 자동 블로킹 게이트에 적합하지 않고, 비용이 실제로 나간다. `evals/runners/check_thresholds.py`는 **사람이 실행**하고, 그 스크립트 자체도 보호 경로에 둔다(임계값을 낮춰 통과시키는 경로 차단).
+
+**모델 호출 없이 단위 테스트 가능한 것** (CI가 실제로 지키는 범위):
+`mask_pii` · `save_draft` 게이트 4종 · 에스컬레이션 조건 E1–E8 판정 · 인텐트→도구 매핑 · `validate_node` threshold 로직 · 청킹 · 하이드레이션.
+→ 안전에 직결되는 로직이 전부 결정론적 코드에 있어서 **모델 없이 CI로 지킬 수 있다.** 이건 우연이 아니라 "LLM이 판단하고 코드가 결정한다" 원칙의 부수 효과다.
 
 ---
 
-## 11. 빌드 순서
+## 14. 빌드 순서
 
-`PROMPTS.md`에 Phase별 프롬프트와 완료 기준이 있다. 순서만 요약하면:
+`PROMPTS.md`에 Phase별 프롬프트와 완료 기준이 있다.
 
-1. **하네스 먼저** — 훅·권한·차단 검증 (코드보다 먼저. 되돌릴 수 없는 사고를 먼저 막는다)
-2. 스캐폴딩 → 데이터 준비 → RAG → LLM 추상화(정식 경로)
+1. **하네스 먼저** — 훅·권한·차단 검증 (코드보다 먼저)
+2. 스캐폴딩 → 데이터 준비(다운로드·합성·하이드레이션) → RAG → LLM 추상화(정식 경로)
 3. Triage → Reply Agent(judge/validate/escalate)
 4. **평가 체계** — Judge 신뢰도부터
 5. 커스텀 어댑터 + `VENDOR_INTEGRATION.md`
@@ -404,19 +656,24 @@ cs-assistant/
 
 ---
 
-## 12. 결정 완료 / 미결정
+## 15. 결정 완료 / 미결정
 
 **확정**
 - 도메인: 이커머스 CS로 얇게 특화, verticalization 2단계 구조
-- 데이터셋: Bitext + 합성 정책/주문 DB
+- **파이프라인 언어: 영어 / 문서: 한국어** (0절)
+- 데이터셋: Bitext(26,872 / 27 인텐트 / 10 카테고리 / 영어 / CDLA-Sharing-1.0) + 합성 정책·주문 DB
+- **`response` 컬럼은 정답셋으로 쓰지 않음** (4.2절)
 - 생성 백엔드 기본: Anthropic `claude-opus-5` (`ChatAnthropic`)
-- Judge: 크로스 벤더(OpenAI `gpt-5.6-luna`) — 신뢰도 측정 후 확정
-- 훅 스크립트 언어: **Python (stdlib json)**
+- Judge: 크로스 벤더 — κ 재검증 후 확정
+- 훅 스크립트 언어: Python (stdlib json)
 - 범위: 풀스택(Next.js UI) + 배포까지 1차 범위
-- HITL: `escalated`를 1급 종료 상태로
+- HITL: `escalated`를 1급 종료 상태로. 에스컬레이션 조건 E1–E8 (3.1절)
+- 파라미터 초깃값 전체 (3.3절) — 측정 후 조정
 
-**미결정**
+**미결정 (개발 착수를 막지 않음)**
 - 실사용자(테스트해줄 동료) 확보 여부 — 확보되면 "상담원 무수정 채택률" 실측 가능
-- 루프 B/C의 구체적 임계값 — Bitext 서브셋 베이스라인 측정 후 확정
+- Judge 모델 최종 확정 — Phase 7의 κ 측정 결과에 따름. 벤더 요금도 이때 확인
+- 루프 B/C의 최종 임계값 — 베이스라인 측정 후 확정
 - `.claude/agent-memory/`를 커밋할지 (실패 패턴이 포트폴리오 자산이 될 수도 있음)
 - 비용 상황에 따른 생성 모델 하향(`claude-sonnet-5`) 여부 — eval 회귀 확인 후 판단
+- 프롬프트 캐싱 적용 (반복 eval 입력 비용 절감) — 최적화 단계

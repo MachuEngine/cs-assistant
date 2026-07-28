@@ -54,19 +54,40 @@ DESIGN.md 9절 구조에 따라 프로젝트 뼈대를 만들어줘.
 
 ## Phase 2 — 데이터 준비
 
+> **파이프라인 언어는 영어다.** 정책 문서를 한국어로 합성하지 말 것 (DESIGN.md 0절).
+
 ```
-데이터를 준비해줘. 실제 고객 데이터는 절대 사용하지 않는다.
+데이터를 준비해줘. 실제 고객 데이터는 절대 사용하지 않는다. DESIGN.md 4절을 따른다.
 
-1. data/raw/ — Bitext Gen AI Chatbot Customer Support Dataset 다운로드 스크립트
-   (scripts/download_bitext.py). 다운로드 후 data/raw/는 보호 경로이므로 이후 수정 금지.
-2. data/synthetic/policies/ — 가상 이커머스사 정책 문서를 직접 합성.
-   반품/교환/환불/배송/보증/멤버십 등급별 혜택 — 각 문서에 조항 번호를 달아 인용 가능하게 할 것.
-3. data/synthetic/shop.db — 합성 주문/고객 SQLite.
-   주문(주문번호, 상태, 배송사, 송장, 주문일, 금액), 고객(ID, 등급, 가입일).
-   Bitext 티켓의 엔티티 슬롯과 매칭되도록 생성.
-4. scripts/build_synthetic_data.py — 2~3을 재현 가능하게 생성 (시드 고정)
+1. scripts/download_bitext.py — Bitext 데이터셋 다운로드 → data/raw/
+   - 26,872쌍 / 27 인텐트 / 10 카테고리 / 영어 / CDLA-Sharing-1.0
+   - data/raw/ 는 .gitignore + 보호 경로. 커밋하지 않고 스크립트로 재현한다
+   - data/README.md 에 출처·라이선스 명시
 
-완료 기준: 정책 문서 N건 + 주문 M건 생성, 샘플 조회 동작 확인. 확인되면 멈추고 보고해줘.
+2. scripts/build_synthetic_data.py — 시드 고정, 재현 가능하게:
+   a) data/synthetic/policies/ — 가상 이커머스사(Northwind Retail) **영문** 정책 문서.
+      반품/교환/환불/배송/취소수수료/보증/멤버십 등급.
+      [엄수] 각 조항에 번호 부여 (RET-03, SHIP-07 …) — 인용 가능해야 게이트 ④가 동작한다
+      [엄수] tier·기한 분기를 반드시 포함 (예: 반품기한 standard 14일 / plus 30일 / vip 60일)
+             그래야 check_customer_tier 가 장식이 아니라 답을 바꾸는 도구가 된다
+   b) data/synthetic/shop.db — SQLite
+      orders(order_id, customer_id, status, carrier, tracking_no, ordered_at, delivered_at, amount, currency)
+      customers(customer_id, tier, joined_at, country)
+
+3. scripts/hydrate_tickets.py — ★ 이 단계를 빠뜨리지 말 것
+   Bitext instruction 의 {{Order Number}} 같은 플레이스홀더는 문자열 리터럴이지 실제 값이 아니다.
+   그대로 두면 lookup_order 가 조회할 대상이 없다.
+   → shop.db 의 실제 레코드로 치환해 data/synthetic/tickets.jsonl 생성
+     {ticket_id, text, intent, category, flags, order_id, customer_id}
+   [엄수] 약 10%는 **존재하지 않는 주문번호**로 채운다 — 에스컬레이션 E6 경로를 실제로 발생시켜야
+          테스트가 된다. 티켓↔주문 매핑은 기록해 둔다(골든셋 정답 산출에 필요).
+
+[엄수] Bitext 의 response 컬럼은 플레이스홀더 템플릿이며 우리 정책에 근거하지 않는다.
+       정답셋으로 쓰거나 RAG 코퍼스에 적재하지 말 것. 영어 CS 문체 참고용으로만.
+
+완료 기준: 정책 문서 + 주문/고객 레코드 + tickets.jsonl 생성.
+하이드레이션된 티켓의 주문번호로 shop.db 조회가 실제로 되는지, 존재하지 않는 주문번호 비율이
+의도대로인지 확인. 확인되면 멈추고 보고해줘.
 ```
 
 ---
@@ -110,15 +131,31 @@ LLM 호출 추상화 레이어를 만들어줘. DESIGN.md 7절을 따른다.
 ## Phase 5 — Triage 모듈
 
 ```
-티켓 분류 모듈을 구현해줘. 에이전트를 쓰지 않는다 — 단일 LLM 호출 + 구조화 출력이다.
-- 입력: 티켓 본문 (PII 마스킹 후)
-- 출력: {intent(27개 중 1개), category, confidence, requires_human, reason}
-- app/common/privacy.py 의 mask_pii 를 모델 호출 "이전"에 적용
-- confidence 는 LLM이 기록만 하고, requires_human 판정(임계값 비교)은 코드가 한다
-- 인텐트 목록은 Bitext 라벨을 그대로 사용, prompts/triage_*.md 로 외부화
+티켓 분류 모듈과 PII 마스킹을 구현해줘. 에이전트를 쓰지 않는다 — 단일 LLM 호출 + 구조화 출력이다.
 
-완료 기준: 샘플 티켓 20건 분류 → 인텐트/카테고리/confidence 출력.
-마스킹이 모델 호출 전에 일어나는지 테스트로 확인. 확인되면 멈추고 보고해줘.
+1. app/common/privacy.py — mask_pii (DESIGN.md 5절)
+   - 마스킹 대상(영문 패턴): 이메일 · 전화번호 · 신용카드번호 · 우편주소 · 인명
+     → {{EMAIL}} {{PHONE}} {{CARD}} {{ADDRESS}} {{NAME}}
+   - [엄수] 마스킹 금지: 주문번호 · 송장번호 · 고객ID. lookup_order 가 입력으로 써야 한다.
+            전부 가리면 도구가 동작하지 않는다
+   - 신용카드는 Luhn 검증 통과 패턴만 카드로 판정 (오탐 억제)
+   - 순수 함수로 구현 — 모델 호출 없이 단위 테스트 가능해야 한다
+
+2. app/modules/reply/routing.py — 라우팅 규칙을 한 곳에 (DESIGN.md 3.1·3.2절)
+   - 에스컬레이션 조건 E1~E8
+   - 인텐트 → 도구 매핑 (search_policy / lookup_order / check_customer_tier 의 필수·선택)
+   [엄수] 프롬프트·save_draft 게이트·eval 이 전부 이 모듈을 참조해야 한다. 표를 복제하지 말 것
+
+3. app/modules/triage/classifier.py
+   - 입력: 마스킹된 티켓 본문 (+ flags)
+   - 출력: {intent, category, confidence, requires_human, reason}
+   - 인텐트 27개 / 카테고리 10개 — Bitext 라벨 그대로 (DESIGN.md 4.1절)
+   - confidence 는 LLM이 기록만 하고, requires_human 판정은 코드가 한다
+     (TRIAGE_CONFIDENCE_THRESHOLD, 기본 0.70 — 환경변수로 노출)
+   - 프롬프트는 prompts/triage_*.md 로 외부화
+
+완료 기준: 샘플 티켓 20건 분류 결과 + 마스킹이 모델 호출 전에 일어나는지 테스트로 확인 +
+mask_pii 와 E1~E8 판정의 단위 테스트 통과. 확인되면 멈추고 보고해줘.
 ```
 
 ---
@@ -134,15 +171,25 @@ LLM 호출 추상화 레이어를 만들어줘. DESIGN.md 7절을 따른다.
             save_draft / discard_draft / escalate_to_human / submit_for_review
   [엄수] 모든 도구는 LLM 호출 없이 순수 계산·검색·저장만 수행한다. 추론과 문장 작성은 에이전트가 직접 한다.
 - save_draft 결정론적 게이트 4종 (통과 시에만 저장, 거부 시 사유를 도구 응답으로 반환):
-  ① PII 재유출 ② 근거 없는 확약(도구 결과에 없는 금액/날짜/환불 확약)
-  ③ 금지 표현 블랙리스트 ④ 정책 인용 존재(정책 판단 인텐트인데 인용 0건이면 거부)
-- judge 노드: get_judge_backend()로 정책 준수 + 톤 채점. app/modules/reply/judge.py 의 함수를 호출하며,
+  ① PII 재유출 — **마스킹되지 않은 원본 패턴**만 거부. 마스킹 토큰({{EMAIL}})은 정상이니 허용
+  ② 근거 없는 확약 — 도구가 반환한 적 없는 금액/날짜/환불 확약
+  ③ 금지 표현 블랙리스트 — guarantee, we are liable 등 법적 확약 / 타사 비방 / 무조건 보상
+  ④ 정책 인용 존재 — routing.py 에서 "필수"인 인텐트인데 인용 0건이면 거부
+     (ACCOUNT/NEWSLETTER/FEEDBACK 계열은 절차 안내라 인용 불필요 — 여기까지 강제하면
+      없는 근거를 만들어내는 유인이 생긴다)
+- judge 노드: get_judge_backend()로 채점. app/modules/reply/judge.py 의 함수를 호출하며,
   이 함수는 나중에 오프라인 eval도 동일하게 호출한다(검증-배포 일치).
-- validate 노드: 코드가 결정론적으로 판정 — judge threshold, 근거 인용 존재, PII 검사, 개수/형식
-- 종료 상태 3종: auto_draft / escalated / failed.
+  출력 스키마 고정: {policy_compliance:1-5, tone:1-5, violations[{type,span,severity}], reasoning}
+  violation type enum: unsupported_commitment / policy_contradiction / missing_citation /
+                       inappropriate_tone / pii_leak / out_of_scope_promise
+  루브릭 텍스트는 prompts/judge_*.md 로 외부화
+- validate 노드: 코드가 결정론적으로 판정 —
+  policy_compliance ≥ 4 AND tone ≥ 4 AND high severity 위반 0건, 그리고 인용·PII·형식 검사
+- 종료 상태 3종: auto_draft / escalated / failed. 에스컬레이션 조건은 routing.py 의 E1~E8.
   budget 소진 시 미달 초안을 내보내지 말고 escalated 로 종료한다.
 - 재시도 시 validation_feedback 을 프롬프트에 주입해 같은 실수를 반복하지 않게 한다
-- turn cap 과 budget 으로 무한루프 방지
+- 파라미터는 환경변수로: REPLY_TURN_CAP(12) / REPLY_BUDGET(2) / MALFORMED_TOOL_CALL_STREAK(3).
+  코드에 상수로 박지 말 것
 - 출력에 "상담원 최종 책임(보조수단)" 고지 포함
 
 완료 기준: 샘플 티켓 → 초안 생성 + 정책 인용 + judge 채점 + 코드 검증.
@@ -159,15 +206,23 @@ LLM 호출 추상화 레이어를 만들어줘. DESIGN.md 7절을 따른다.
 ```
 평가 체계를 구축해줘. DESIGN.md 5절을 따른다. 합성/공개 데이터만 사용.
 
-1. 골든셋 (evals/golden/*.jsonl — 만든 뒤에는 보호 경로):
-   - triage_golden: Bitext 라벨 기반 200건
-   - policy_violation_golden: 위반을 심은 답변 50건 (위반 유형 라벨 포함)
-   - tone_golden: 생성 답변 30건에 사람이 5점 척도 라벨링
-   - escalation_golden: 사람 개입이 필요한 케이스 30건 (라벨: should_escalate)
-   - retrieval_golden: 질의 → 정답 조항 30건
+1. 골든셋 6종 (evals/golden/*.jsonl — 만든 뒤에는 보호 경로). DESIGN.md 6.3절:
+   - triage_golden      200건 — Bitext 층화 샘플링(인텐트당 7~8건, flags 다양성 확보)
+   - pii_golden          50건 — ★ 하이드레이션 티켓에 영문 PII를 주입하고 정답 스팬 기록.
+                                 Bitext는 이미 익명화돼 있어 마스킹할 실제 PII가 없다.
+                                 이게 없으면 🔴 지표인 PII FN율을 측정할 수 없다
+   - policy_violation_golden 50건 — 무근거 확약 20 / 정책 모순 15 / 인용 누락 10 / 범위 밖 약속 5
+   - tone_golden         30건 — Phase 6에서 생성된 실제 초안에 사람이 5점 척도 라벨링
+   - escalation_golden   40건 — E1~E8 각 조건 재현 케이스 + 에스컬레이션 불필요한 대조군
+   - retrieval_golden    30건 — 질의 → 정답 조항 번호(RET-03 등)
 2. evals/runners/ (보호 경로):
    - run_triage.py    — 인텐트 accuracy / macro-F1 / 카테고리 accuracy / confidence 캘리브레이션
-   - run_reply.py     — PII FN율, 정책 위반 Recall/F1, 근거없는 확약률, 톤 Judge 평균,
+                        [엄수] 혼동행렬도 함께 리포트. Bitext는 인텐트당 ~1,000건으로 분포가 균등하므로
+                        macro-F1의 목적은 불균형 보정이 아니라 **인접 인텐트 쌍의 국소 붕괴 탐지**다
+                        (check_invoice↔get_invoice, check_refund_policy↔get_refund,
+                         change_shipping_address↔set_up_shipping_address)
+   - run_pii.py       — 마스킹 FN율(목표 0) / FP율
+   - run_reply.py     — 정책 위반 Recall/F1, 근거없는 확약률, 톤 Judge 평균,
                         에스컬레이션 Recall/FP율, 평균 반복수·도구호출수·latency
    - run_judge_reliability.py — 사람 라벨 대비 Cohen's κ, ±1 일치율
    - run_retrieval.py — Recall@5, MRR
