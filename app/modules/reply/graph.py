@@ -296,17 +296,8 @@ def get_reply_graph():
     return _reply_graph
 
 
-async def run_reply(ticket: dict, triage: dict) -> dict:
-    """공개 진입점.
-
-    ticket: {ticket_id, text(마스킹된 본문), customer_id, order_id(없으면 "")}
-    triage: {intent, category, confidence, requires_human}
-    반환: ReplyState 전체(outcome/draft/judge_result/escalation_reason 포함)
-    """
-    bind_session()  # 그래프 실행 전, 그래프 밖에서 — tools.py의 bind_session() 참고
-    graph = get_reply_graph()
-
-    initial_state: ReplyState = {
+def _build_initial_state(ticket: dict, triage: dict) -> ReplyState:
+    return {
         "ticket": ticket,
         "triage": triage,
         "draft": {"reply_text": "", "cited_policies": [], "tools_used": []},
@@ -320,4 +311,61 @@ async def run_reply(ticket: dict, triage: dict) -> dict:
         "outcome": "",
         "escalation_reason": "",
     }
+
+
+async def run_reply(ticket: dict, triage: dict) -> dict:
+    """공개 진입점.
+
+    ticket: {ticket_id, text(마스킹된 본문), customer_id, order_id(없으면 "")}
+    triage: {intent, category, confidence, requires_human}
+    반환: ReplyState 전체(outcome/draft/judge_result/escalation_reason 포함)
+    """
+    bind_session()  # 그래프 실행 전, 그래프 밖에서 — tools.py의 bind_session() 참고
+    graph = get_reply_graph()
+    initial_state = _build_initial_state(ticket, triage)
     return await graph.ainvoke(initial_state)
+
+
+async def stream_reply(ticket: dict, triage: dict):
+    """app/main.py의 SSE 엔드포인트(POST /reply/stream)가 소비하는 진행
+    이벤트 제너레이터. 노드 순서·판정 로직은 run_reply()와 완전히 동일하다 —
+    astream(..., stream_mode="updates")로 같은 그래프를 실행하며 진행 상황만
+    추가로 내보낸다.
+
+    "updates" 모드는 매 노드 실행 뒤 {node_name: 그 노드가 반환한 partial
+    dict}를 내보낸다. 그래프를 두 번 실행하지 않기 위해, 이 partial을 로컬
+    state에 그대로 merge해 최종 outcome/draft/judge_result를 재구성한다
+    (LangGraph 내부적으로 하는 merge와 동일한 연산 — TypedDict 갱신이라
+    얕은 dict.update()로 충분하다).
+
+    yield하는 이벤트 스키마는 app/main.py·frontend와 계약이 고정돼 있다:
+    - {"status": "progress", "stage": "plan"|"agent"|"judge"|"validate"} (0회 이상)
+    - 마지막 1개: {"status": "done", "outcome": "auto_draft", ...} 또는
+      {"status": "done", "outcome": "escalated", "escalation_reason": ...}
+    (triage 단계 이벤트와 "error"/"failed" 처리는 이 함수를 감싸는
+    app/main.py 쪽 책임이다 — 이 함수는 이미 triage를 마친 뒤 호출된다.)
+    """
+    bind_session()
+    graph = get_reply_graph()
+    state = _build_initial_state(ticket, triage)
+
+    async for update in graph.astream(state, stream_mode="updates"):
+        for node_name, partial in update.items():
+            state.update(partial)
+            yield {"status": "progress", "stage": node_name}
+
+    if state["outcome"] == "escalated":
+        yield {
+            "status": "done",
+            "outcome": "escalated",
+            "escalation_reason": state["escalation_reason"],
+        }
+    else:
+        yield {
+            "status": "done",
+            "outcome": "auto_draft",
+            "draft": state["draft"]["reply_text"],
+            "cited_policies": state["draft"]["cited_policies"],
+            "tools_used": state["draft"]["tools_used"],
+            "judge_result": state["judge_result"],
+        }
