@@ -351,7 +351,11 @@ async def stream_reply(ticket: dict, triage: dict):
 
     async for update in graph.astream(state, stream_mode="updates"):
         for node_name, partial in update.items():
-            state.update(partial)
+            # LangGraph는 노드가 빈 dict({})를 반환해도 "updates" 모드에서
+            # None을 내보낸다(plan_node가 항상 이 경우 — 실측 확인,
+            # 2026-07-29). None을 "변경 없음"으로 취급한다.
+            if partial:
+                state.update(partial)
             yield {"status": "progress", "stage": node_name}
 
     if state["outcome"] == "escalated":

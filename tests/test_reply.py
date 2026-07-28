@@ -13,7 +13,14 @@ import pytest
 
 from app.common.privacy import mask_pii
 from app.modules.reply import tools as reply_tools
-from app.modules.reply.graph import route_after_agent, run_reply, should_retry, validate_node
+from app.modules.reply import graph as reply_graph
+from app.modules.reply.graph import (
+    route_after_agent,
+    run_reply,
+    should_retry,
+    stream_reply,
+    validate_node,
+)
 
 TICKETS_PATH = pathlib.Path("data/synthetic/tickets.jsonl")
 SHOP_DB_PATH = "data/synthetic/shop.db"
@@ -289,6 +296,52 @@ def test_route_after_agent_no_draft_goes_to_validate():
 
 def test_route_after_agent_with_draft_goes_to_judge():
     assert route_after_agent({"escalation_reason": "", "draft": {"reply_text": "hello"}}) == "judge"
+
+
+class _FakeCompiledGraph:
+    """astream(stream_mode="updates")을 흉내내는 스텁 — 실제 LangGraph는 노드가
+    빈 dict({})를 반환해도 None을 내보낸다(2026-07-29, 실측으로 발견한 버그:
+    stream_reply()가 이걸 그대로 state.update(None)에 넘겨 TypeError가 났었다).
+    이 테스트는 LLM 없이 그 케이스를 재현해 회귀를 막는다."""
+
+    def __init__(self, updates):
+        self._updates = updates
+
+    async def astream(self, state, stream_mode="updates"):
+        for update in self._updates:
+            yield update
+
+
+@pytest.mark.asyncio
+async def test_stream_reply_handles_none_partial_from_empty_node_update(monkeypatch):
+    """plan_node처럼 빈 dict를 반환하는 노드는 LangGraph updates 모드에서
+    {"plan": None}으로 나온다 — state.update()에 None을 그대로 넘기면 안 된다."""
+    fake_graph = _FakeCompiledGraph([
+        {"plan": None},
+        {"agent": {
+            "draft": {"reply_text": "", "cited_policies": [], "tools_used": []},
+            "budget": 2,
+        }},
+        {"validate": {
+            "validation_passed": False,
+            "validation_feedback": "no draft",
+            "escalation_reason": "E8",
+            "outcome": "escalated",
+        }},
+    ])
+    monkeypatch.setattr(reply_graph, "get_reply_graph", lambda: fake_graph)
+    reply_tools.bind_session()
+
+    events = []
+    async for event in stream_reply(
+        {"ticket_id": "T1", "text": "hi", "customer_id": "", "order_id": ""},
+        {"intent": "cancel_order", "category": "ORDER", "confidence": 0.9, "requires_human": False},
+    ):
+        events.append(event)
+
+    stages = [e["stage"] for e in events if e["status"] == "progress"]
+    assert stages == ["plan", "agent", "validate"]
+    assert events[-1] == {"status": "done", "outcome": "escalated", "escalation_reason": "E8"}
 
 
 # --- 완료 기준: 그래프 전체를 실제 Ollama로 실행 ----------------------------
