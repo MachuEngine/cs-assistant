@@ -113,7 +113,7 @@ DESIGN.md 12절(레포 구조) 구조에 따라 프로젝트 뼈대를 만들어
 LLM 호출 추상화 레이어를 만들어줘. DESIGN.md 7절을 따른다.
 - app/common/llm/base.py: LLMBackend ABC (generate)
 - app/common/llm/factory.py: get_llm_backend() / get_judge_backend() — 환경변수로 전환
-- backends/anthropic.py: ChatAnthropic (기본 생성 백엔드, claude-opus-5)
+- backends/anthropic.py: ChatAnthropic (기본 생성 백엔드, claude-sonnet-5)
 - backends/openai.py: ChatOpenAI (기본 Judge 백엔드, gpt-5.6-luna)
 - backends/ollama.py: 로컬 개발용
 - LLM_BACKEND / JUDGE_BACKEND 는 서로 독립적으로 전환 가능해야 한다
