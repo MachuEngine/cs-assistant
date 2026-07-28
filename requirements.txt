@@ -4,6 +4,7 @@ fastapi>=0.115
 uvicorn[standard]>=0.32
 httpx>=0.27
 pytest>=8.3
+pytest-asyncio>=0.24  # Phase 5부터 async triage 함수 테스트에 필요
 python-dotenv>=1.0  # app/main.py가 .env 로드 (Phase 0에서 만든 .env.example을 실제로 쓰이게 함)
 
 # Phase 4 — LLM 추상화 레이어 (정식 지원 경로)
