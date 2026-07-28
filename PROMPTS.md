@@ -241,7 +241,7 @@ mask_pii 와 E1~E8 판정의 단위 테스트 통과. 확인되면 멈추고 보
 ## Phase 8 — 커스텀 어댑터 경로 + VENDOR_INTEGRATION.md
 
 ```
-같은 LangGraph 파이프라인에 커스텀 벤더 어댑터를 붙여줘. DESIGN.md 7절을 따른다.
+같은 LangGraph 파이프라인에 커스텀 벤더 어댑터를 붙여줘. DESIGN.md 10절을 따른다.
 
 1. app/common/llm/backends/chat_runpod.py — BaseChatModel 직접 상속:
    - _generate / _agenerate

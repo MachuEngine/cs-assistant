@@ -30,6 +30,11 @@ def get_llm_backend() -> BaseChatModel:
         return get_chat_openai()
     if backend == "ollama":
         return get_chat_ollama()
+    if backend == "runpod":
+        # 지연 import — RunPod을 안 쓰는 배포는 이 모듈(httpx 기반 커스텀
+        # 어댑터, DESIGN.md 10절)을 로드할 필요가 없다.
+        from .backends.chat_runpod import ChatRunPod
+        return ChatRunPod()
     raise NotImplementedError(f"지원하지 않는 LLM_BACKEND: '{backend}'")
 
 
