@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          { "type": "command", "command": "python3 .claude/hooks/block_secrets.py" }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "python3 .claude/hooks/block_protected_paths.py" }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "python3 .claude/hooks/guard_eval_cost.py" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          { "type": "command", "command": "python3 .claude/hooks/log_tool_calls.py" }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Edit(./evals/golden/**)",
+      "Edit(./evals/runners/**)",
+      "Edit(./data/raw/**)",
+      "Bash(rm -rf*)",
+      "Bash(git push --force*)"
+    ]
+  }
+}
