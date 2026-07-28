@@ -1,0 +1,31 @@
+# 프로덕션 리버스 프록시. DESIGN.md 13절 구성:
+#   브라우저 --(HTTPS)--> Caddy --> Next.js(:3000) --> FastAPI(:8000, 서버 간 호출만)
+#
+# FastAPI는 브라우저에 직접 노출하지 않는다 — Next.js 서버 라우트
+# (frontend/app/api/reply/stream/route.ts)만 서버 간 CS_API_KEY로 호출한다.
+# 그래서 이 Caddyfile은 Next.js 하나로만 리버스 프록시한다.
+#
+# 실제 배포 시 아래 도메인을 실제 도메인으로 바꾼다. 이 환경에서는 실제
+# 도메인·DNS가 없어 `caddy validate`로 문법만 검증했다 — 실제 ACME 인증서
+# 발급은 사람이 클라우드 VM에서 확인해야 한다(HARNESS_ENGINEERING.md 참고).
+cs-assistant.example.com {
+	reverse_proxy localhost:3000
+
+	encode gzip
+
+	# 액세스 로그 — 티켓 본문은 어차피 요청 바디라 로그에 남지 않는다
+	# (Caddy 기본 로그는 요청 바디를 기록하지 않음). 그래도 헤더에 PII가
+	# 없는지는 배포 전 별도 확인 대상이다.
+	log {
+		output file /var/log/caddy/cs-assistant-access.log
+		format json
+	}
+
+	header {
+		# 서버 정보 노출 최소화
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+}

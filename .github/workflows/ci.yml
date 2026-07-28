@@ -1,0 +1,60 @@
+# 경량 CI — 매 PR 블로킹. DESIGN.md 13절.
+#
+# [엄수] 여기서는 실제 모델 호출이 있는 테스트(-m llm_live)와 무거운 임베딩/
+# 리랭킹 모델을 내려받는 테스트(-m rag)를 절대 실행하지 않는다. 변동성(생성·
+# 채점 결과가 매번 다름)과 비용(실제 API 요금) 때문에 전체 eval은 사람이
+# evals/runners/check_thresholds.py로 직접 실행한다 — CI는 순수 로직만 지킨다.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend — unit tests + import smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate synthetic data (needed by unit tests, no model calls)
+        run: python scripts/build_synthetic_data.py
+
+      - name: Unit tests (no model calls, no heavy embedding downloads)
+        run: pytest tests/ -q -m "not rag and not llm_live"
+
+      - name: Backend import smoke
+        run: python -c "from app.main import app; print('app import ok:', app.title)"
+
+  frontend:
+    name: Frontend — lint + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

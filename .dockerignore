@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.env
+.env.*
+!.env.example
+chroma_db/
+evals/reports/
+data/raw/
+data/synthetic/*.db
+data/synthetic/tickets.jsonl
+frontend/node_modules
+frontend/.next
+.claude/agent-memory/
