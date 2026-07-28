@@ -1,0 +1,6 @@
+# Phase 1 — 최소 의존성. 이후 Phase에서 실제로 쓸 때 항목을 추가한다
+# (langchain-anthropic/openai, langgraph, chromadb, sentence-transformers 등은 Phase 3~4).
+fastapi>=0.115
+uvicorn[standard]>=0.32
+httpx>=0.27
+pytest>=8.3

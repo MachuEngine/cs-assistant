@@ -39,7 +39,7 @@
 ## Phase 1 — 프로젝트 스캐폴딩
 
 ```
-DESIGN.md 9절 구조에 따라 프로젝트 뼈대를 만들어줘.
+DESIGN.md 12절(레포 구조) 구조에 따라 프로젝트 뼈대를 만들어줘.
 - Python venv + requirements.txt
 - FastAPI 비동기 서버, 모듈 분리 (common/rag, common/llm, modules/triage, modules/reply)
 - prompts/ 디렉토리 (프롬프트는 코드에 인라인하지 않는다)
