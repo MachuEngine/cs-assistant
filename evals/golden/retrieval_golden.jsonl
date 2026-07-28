@@ -1,0 +1,32 @@
+{"golden_id": "RTV-001", "query": "If my order hasn't started processing yet, is there a fee to cancel it?", "expected_clause_ids": ["CANC-01"]}
+{"golden_id": "RTV-002", "query": "What's the cancellation fee once my order is already being processed?", "expected_clause_ids": ["CANC-02"]}
+{"golden_id": "RTV-003", "query": "Can I cancel an order that has already shipped?", "expected_clause_ids": ["CANC-03"]}
+{"golden_id": "RTV-004", "query": "Can I still modify the items in my order after placing it?", "expected_clause_ids": ["CANC-04"]}
+{"golden_id": "RTV-005", "query": "What are the different membership tiers you offer?", "expected_clause_ids": ["TIER-01"]}
+{"golden_id": "RTV-006", "query": "What benefits does the Standard tier include?", "expected_clause_ids": ["TIER-02"]}
+{"golden_id": "RTV-007", "query": "What benefits come with the Plus membership tier?", "expected_clause_ids": ["TIER-03"]}
+{"golden_id": "RTV-008", "query": "What perks does the VIP tier give me?", "expected_clause_ids": ["TIER-04"]}
+{"golden_id": "RTV-009", "query": "What payment methods do you accept?", "expected_clause_ids": ["PAY-01"]}
+{"golden_id": "RTV-010", "query": "My card payment failed, what should I do?", "expected_clause_ids": ["PAY-02"]}
+{"golden_id": "RTV-011", "query": "Can I pay using store credit or a gift card?", "expected_clause_ids": ["PAY-03"]}
+{"golden_id": "RTV-012", "query": "How will my refund be paid back to me?", "expected_clause_ids": ["REF-01"]}
+{"golden_id": "RTV-013", "query": "How long does a refund take to process for my membership tier?", "expected_clause_ids": ["REF-02"]}
+{"golden_id": "RTV-014", "query": "Can I get a partial refund for only part of my order?", "expected_clause_ids": ["REF-03"]}
+{"golden_id": "RTV-015", "query": "Do I get a refund if I cancel before the order ships?", "expected_clause_ids": ["REF-04"]}
+{"golden_id": "RTV-016", "query": "How will I know once my refund has actually gone through?", "expected_clause_ids": ["REF-05"]}
+{"golden_id": "RTV-017", "query": "What are the general rules for being eligible to return an item?", "expected_clause_ids": ["RET-01"]}
+{"golden_id": "RTV-018", "query": "How many days do I have to return an item based on my tier?", "expected_clause_ids": ["RET-02"]}
+{"golden_id": "RTV-019", "query": "Are there items that just can't be returned at all?", "expected_clause_ids": ["RET-03"]}
+{"golden_id": "RTV-020", "query": "How does the exchange process work if I want a different size?", "expected_clause_ids": ["RET-04"]}
+{"golden_id": "RTV-021", "query": "Do I have to pay for return shipping myself?", "expected_clause_ids": ["RET-05"]}
+{"golden_id": "RTV-022", "query": "What condition does a returned item need to be in?", "expected_clause_ids": ["RET-06"]}
+{"golden_id": "RTV-023", "query": "How long does standard delivery normally take?", "expected_clause_ids": ["SHIP-01"]}
+{"golden_id": "RTV-024", "query": "Is expedited shipping faster depending on my membership tier?", "expected_clause_ids": ["SHIP-02"]}
+{"golden_id": "RTV-025", "query": "Can I change the shipping address after I've placed the order?", "expected_clause_ids": ["SHIP-03"]}
+{"golden_id": "RTV-026", "query": "My package is delayed, what happens next?", "expected_clause_ids": ["SHIP-04"]}
+{"golden_id": "RTV-027", "query": "Are there countries you can't ship international orders to?", "expected_clause_ids": ["SHIP-05"]}
+{"golden_id": "RTV-028", "query": "What does the standard warranty cover on my product?", "expected_clause_ids": ["WARR-01"]}
+{"golden_id": "RTV-029", "query": "Can I get extended warranty coverage based on my tier?", "expected_clause_ids": ["WARR-02"]}
+{"golden_id": "RTV-030", "query": "How do I actually file a warranty claim?", "expected_clause_ids": ["WARR-03"]}
+{"golden_id": "RTV-031", "query": "If I cancel an order that hasn't shipped yet, do I get charged a fee and do I get a refund?", "expected_clause_ids": ["CANC-01", "REF-04"]}
+{"golden_id": "RTV-032", "query": "Does my membership tier affect both how fast my refund arrives and how long I have to return something?", "expected_clause_ids": ["REF-02", "RET-02"]}

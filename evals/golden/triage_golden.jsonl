@@ -1,0 +1,200 @@
+{"ticket_id": "TCK-002333", "text": "how can i find information about correcting the address", "intent": "change_shipping_address", "category": "SHIPPING", "flags": "BILQ"}
+{"ticket_id": "TCK-008416", "text": "help me to see what hours I can reach customer support", "intent": "contact_customer_service", "category": "CONTACT", "flags": "BL"}
+{"ticket_id": "TCK-016003", "text": "help to ask for a restitution of money", "intent": "get_refund", "category": "REFUND", "flags": "BL"}
+{"ticket_id": "TCK-023778", "text": "I try to submit a new delivery address", "intent": "set_up_shipping_address", "category": "SHIPPING", "flags": "BL"}
+{"ticket_id": "TCK-003009", "text": "is it possible to check the withdrawal charges", "intent": "check_cancellation_fee", "category": "CANCEL", "flags": "BILMQ"}
+{"ticket_id": "TCK-018078", "text": "is it possible to report troubles with payments?", "intent": "payment_issue", "category": "PAYMENT", "flags": "BILM"}
+{"ticket_id": "TCK-009491", "text": "I want assistance to contact an operator", "intent": "contact_human_agent", "category": "CONTACT", "flags": "BL"}
+{"ticket_id": "TCK-011681", "text": "remove corporate accoint", "intent": "delete_account", "category": "ACCOUNT", "flags": "BKLZ"}
+{"ticket_id": "TCK-021122", "text": "I am experiencing an problem registering", "intent": "registration_problems", "category": "ACCOUNT", "flags": "BELZ"}
+{"ticket_id": "TCK-010359", "text": "what do i have to do to createa premium account", "intent": "create_account", "category": "ACCOUNT", "flags": "BILQZ"}
+{"ticket_id": "TCK-022902", "text": "I try to submit the secondary delivery address", "intent": "set_up_shipping_address", "category": "SHIPPING", "flags": "BL"}
+{"ticket_id": "TCK-002860", "text": "I need assistance to modify my address", "intent": "change_shipping_address", "category": "SHIPPING", "flags": "BL"}
+{"ticket_id": "TCK-022441", "text": "i want help to send feedback for ur services", "intent": "review", "category": "FEEDBACK", "flags": "BLQ"}
+{"ticket_id": "TCK-019421", "text": "I need help to earn several producst", "intent": "place_order", "category": "ORDER", "flags": "BLMZ"}
+{"ticket_id": "TCK-004657", "text": "see bill from Grace Brown", "intent": "check_invoice", "category": "INVOICE", "flags": "BKL"}
+{"ticket_id": "TCK-022522", "text": "is their a section to submit my feedback about a product", "intent": "review", "category": "FEEDBACK", "flags": "BILQZ"}
+{"ticket_id": "TCK-002529", "text": "I want assistance to change the address", "intent": "change_shipping_address", "category": "SHIPPING", "flags": "BL"}
+{"ticket_id": "TCK-002055", "text": "want help trying to edit my addres", "intent": "change_shipping_address", "category": "SHIPPING", "flags": "BLQZ"}
+{"ticket_id": "TCK-017862", "text": "how can I subscribe to the newsletter?", "intent": "newsletter_subscription", "category": "SUBSCRIPTION", "flags": "BIL"}
+{"ticket_id": "TCK-014305", "text": "editing details on business account", "intent": "edit_account", "category": "ACCOUNT", "flags": "BKLM"}
+{"ticket_id": "TCK-009299", "text": "i try to speak with someone", "intent": "contact_human_agent", "category": "CONTACT", "flags": "BLQ"}
+{"ticket_id": "TCK-017370", "text": "i dont know how to sign up to the newsletter", "intent": "newsletter_subscription", "category": "SUBSCRIPTION", "flags": "BLQ"}
+{"ticket_id": "TCK-011816", "text": "i no lomger need my damn gold account can uhelp me delete it", "intent": "delete_account", "category": "ACCOUNT", "flags": "BCEILQWZ"}
+{"ticket_id": "TCK-001571", "text": "change purchase ORD-803019", "intent": "change_order", "category": "ORDER", "flags": "BL"}
+{"ticket_id": "TCK-019446", "text": "I want assiostance to acquire an article", "intent": "place_order", "category": "ORDER", "flags": "BLZ"}
+{"ticket_id": "TCK-025161", "text": "can I see order ORD-001423 status?", "intent": "track_order", "category": "ORDER", "flags": "BIL"}
+{"ticket_id": "TCK-022708", "text": "leave review for a service", "intent": "review", "category": "FEEDBACK", "flags": "BK"}
+{"ticket_id": "TCK-024305", "text": "I don't know what I have to do to change to the student account", "intent": "switch_account", "category": "ACCOUNT", "flags": "BL"}
+{"ticket_id": "TCK-006087", "text": "check under what circumstances can i request a reimbursement", "intent": "check_refund_policy", "category": "REFUND", "flags": "BLQ"}
+{"ticket_id": "TCK-011541", "text": "I want assistance to delete a bloody gold account", "intent": "delete_account", "category": "ACCOUNT", "flags": "BLW"}
+{"ticket_id": "TCK-006998", "text": "I don't know what to do to file a claim against your company", "intent": "complaint", "category": "FEEDBACK", "flags": "BL"}
+{"ticket_id": "TCK-026572", "text": "can you help me to see the restitution status?", "intent": "track_refund", "category": "REFUND", "flags": "BIL"}
+{"ticket_id": "TCK-016727", "text": "where do i ask for a refund", "intent": "get_refund", "category": "REFUND", "flags": "BILQ"}
+{"ticket_id": "TCK-005369", "text": "I want assistance checking the available payment options", "intent": "check_payment_methods", "category": "PAYMENT", "flags": "BL"}
+{"ticket_id": "TCK-016328", "text": "I paid £171.69 for a product, I want to obtain a fucking rebate", "intent": "get_refund", "category": "REFUND", "flags": "BCLMW"}
+{"ticket_id": "TCK-001155", "text": "how to change something of order ORD-001021", "intent": "change_order", "category": "ORDER", "flags": "BIQ"}
+{"ticket_id": "TCK-007799", "text": "where can i lodge a reclamation against ur business", "intent": "complaint", "category": "FEEDBACK", "flags": "BILQ"}
+{"ticket_id": "TCK-024253", "text": "use pro account", "intent": "switch_account", "category": "ACCOUNT", "flags": "BK"}
+{"ticket_id": "TCK-008317", "text": "I do not know how I can get in touch with customer service", "intent": "contact_customer_service", "category": "CONTACT", "flags": "BEL"}
+{"ticket_id": "TCK-003162", "text": "could uhelp me check the cancellation penalty", "intent": "check_cancellation_fee", "category": "CANCEL", "flags": "BILPQ"}
+{"ticket_id": "TCK-001195", "text": "I want to change several products of order ORD-000971", "intent": "change_order", "category": "ORDER", "flags": "BLM"}
+{"ticket_id": "TCK-013979", "text": "correct details on premium account", "intent": "edit_account", "category": "ACCOUNT", "flags": "BKLM"}
+{"ticket_id": "TCK-005976", "text": "show me in which situations can I ask to be reimbursed", "intent": "check_refund_policy", "category": "REFUND", "flags": "BL"}
+{"ticket_id": "TCK-023225", "text": "i haveerrors entering my new shipping address", "intent": "set_up_shipping_address", "category": "SHIPPING", "flags": "BLMQZ"}
+{"ticket_id": "TCK-000841", "text": "help with cancelling purchase ORD-002485", "intent": "cancel_order", "category": "ORDER", "flags": "BL"}
+{"ticket_id": "TCK-003254", "text": "I am trying to check the withdrawal charge", "intent": "check_cancellation_fee", "category": "CANCEL", "flags": "BL"}
+{"ticket_id": "TCK-004933", "text": "help me check ur available payment options", "intent": "check_payment_methods", "category": "PAYMENT", "flags": "BLQ"}
+{"ticket_id": "TCK-015524", "text": "i cant find the bill #00108 will umail it to me", "intent": "get_invoice", "category": "INVOICE", "flags": "BCILPQ"}
+{"ticket_id": "TCK-013094", "text": "how long does it take for a damn article to arrive?", "intent": "delivery_period", "category": "DELIVERY", "flags": "BILW"}
+{"ticket_id": "TCK-018552", "text": "i cannot pay want help to report errors with payments", "intent": "payment_issue", "category": "PAYMENT", "flags": "BCELMQ"}
+{"ticket_id": "TCK-012587", "text": "wanna see what shipping methods are available how to do it", "intent": "delivery_options", "category": "DELIVERY", "flags": "BCILMQ"}
+{"ticket_id": "TCK-013697", "text": "help to see how long it takes for my item to arrive", "intent": "delivery_period", "category": "DELIVERY", "flags": "BL"}
+{"ticket_id": "TCK-014321", "text": "correcting information on platinum account", "intent": "edit_account", "category": "ACCOUNT", "flags": "BKL"}
+{"ticket_id": "TCK-026090", "text": "I am trying to check my compensation current status", "intent": "track_refund", "category": "REFUND", "flags": "BL"}
+{"ticket_id": "TCK-000448", "text": "I can no longer afford order ORD-001566", "intent": "cancel_order", "category": "ORDER", "flags": "BLN"}
+{"ticket_id": "TCK-012896", "text": "can i place an oeder from Cape Town", "intent": "delivery_options", "category": "DELIVERY", "flags": "BIQSZ"}
+{"ticket_id": "TCK-020276", "text": "where do I restore my pass?", "intent": "recover_password", "category": "ACCOUNT", "flags": "BILQ"}
+{"ticket_id": "TCK-006218", "text": "inwhat situations can I ask to be reimbursed?", "intent": "check_refund_policy", "category": "REFUND", "flags": "BILZ"}
+{"ticket_id": "TCK-018418", "text": "how can I report troubles with online payment?", "intent": "payment_issue", "category": "PAYMENT", "flags": "BILM"}
+{"ticket_id": "TCK-026792", "text": "assistance to see the restitution status", "intent": "track_refund", "category": "REFUND", "flags": "BL"}
+{"ticket_id": "TCK-004213", "text": "wanna find my bills from Lucas Martinez how do i do it", "intent": "check_invoice", "category": "INVOICE", "flags": "BCILMQ"}
+{"ticket_id": "TCK-011202", "text": "deleting pro account", "intent": "delete_account", "category": "ACCOUNT", "flags": "BKL"}
+{"ticket_id": "TCK-010636", "text": "I would like to create a pro account, how do I do it?", "intent": "create_account", "category": "ACCOUNT", "flags": "BCIP"}
+{"ticket_id": "TCK-024949", "text": "what do I need to do to see order ORD-001206 status?", "intent": "track_order", "category": "ORDER", "flags": "BIL"}
+{"ticket_id": "TCK-017386", "text": "I want to subscribe to the newsletter", "intent": "newsletter_subscription", "category": "SUBSCRIPTION", "flags": "BL"}
+{"ticket_id": "TCK-005030", "text": "wanna list the bloody accepted payment options how to do it", "intent": "check_payment_methods", "category": "PAYMENT", "flags": "BCILQW"}
+{"ticket_id": "TCK-005551", "text": "i want help listing the available payment options", "intent": "check_payment_methods", "category": "PAYMENT", "flags": "BLQ"}
+{"ticket_id": "TCK-000086", "text": "what do I have to do to cancel order ORD-001106?", "intent": "cancel_order", "category": "ORDER", "flags": "BI"}
+{"ticket_id": "TCK-015696", "text": "I need help getting the bills from Leo Harris", "intent": "get_invoice", "category": "INVOICE", "flags": "BLM"}
+{"ticket_id": "TCK-007373", "text": "help making a customer reclamation against ur company", "intent": "complaint", "category": "FEEDBACK", "flags": "BLQ"}
+{"ticket_id": "TCK-013639", "text": "I try to see when will my product arrive", "intent": "delivery_period", "category": "DELIVERY", "flags": "BL"}
+{"ticket_id": "TCK-021159", "text": "I want to inform of an error with a damn signup", "intent": "registration_problems", "category": "ACCOUNT", "flags": "BLW"}
+{"ticket_id": "TCK-000894", "text": "i do not know how to cancel purchase ORD-000952", "intent": "cancel_order", "category": "ORDER", "flags": "BELQ"}
+{"ticket_id": "TCK-020342", "text": "where do I restore the password of my account?", "intent": "recover_password", "category": "ACCOUNT", "flags": "BIL"}
+{"ticket_id": "TCK-010494", "text": "create new premium account for daughter", "intent": "create_account", "category": "ACCOUNT", "flags": "BKL"}
+{"ticket_id": "TCK-021923", "text": "i want assistance to leave feedback aboutur products", "intent": "review", "category": "FEEDBACK", "flags": "BLQZ"}
+{"ticket_id": "TCK-016345", "text": "refunding€217.62", "intent": "get_refund", "category": "REFUND", "flags": "BKMZ"}
+{"ticket_id": "TCK-010277", "text": "I need help to open a standard account", "intent": "create_account", "category": "ACCOUNT", "flags": "BL"}
+{"ticket_id": "TCK-010103", "text": "I need information about opening premium accounts", "intent": "create_account", "category": "ACCOUNT", "flags": "BLM"}
+{"ticket_id": "TCK-007276", "text": "can you help me filing a complaiont?", "intent": "complaint", "category": "FEEDBACK", "flags": "BIZ"}
+{"ticket_id": "TCK-009215", "text": "I do not know what I have to do to speak with an operator", "intent": "contact_human_agent", "category": "CONTACT", "flags": "BEL"}
+{"ticket_id": "TCK-003643", "text": "where doi see the withdrawal penalties", "intent": "check_cancellation_fee", "category": "CANCEL", "flags": "BILMQZ"}
+{"ticket_id": "TCK-021266", "text": "I want assistance to inform of a problem with registrations", "intent": "registration_problems", "category": "ACCOUNT", "flags": "BL"}
+{"ticket_id": "TCK-016875", "text": "i try to receive compensations of money", "intent": "get_refund", "category": "REFUND", "flags": "BLMQ"}
+{"ticket_id": "TCK-001402", "text": "changing order ORD-002882", "intent": "change_order", "category": "ORDER", "flags": "B"}
+{"ticket_id": "TCK-008042", "text": "how can i talk wiht customer service", "intent": "contact_customer_service", "category": "CONTACT", "flags": "BILQZ"}
+{"ticket_id": "TCK-006326", "text": "can i check under which circumstances can i request a refund", "intent": "check_refund_policy", "category": "REFUND", "flags": "BILQ"}
+{"ticket_id": "TCK-019556", "text": "I have got to acquire several of your article", "intent": "place_order", "category": "ORDER", "flags": "BLM"}
+{"ticket_id": "TCK-008629", "text": "help me to see at what time I can contact customer support", "intent": "contact_customer_service", "category": "CONTACT", "flags": "BL"}
+{"ticket_id": "TCK-014353", "text": "editing details on freemium account", "intent": "edit_account", "category": "ACCOUNT", "flags": "BKLM"}
+{"ticket_id": "TCK-013636", "text": "assistance seeing how soon can I expect my item", "intent": "delivery_period", "category": "DELIVERY", "flags": "BL"}
+{"ticket_id": "TCK-000354", "text": "I need help canceling purchase ORD-000984", "intent": "cancel_order", "category": "ORDER", "flags": "BL"}
+{"ticket_id": "TCK-016636", "text": "where to get a restitution of my money", "intent": "get_refund", "category": "REFUND", "flags": "BILQ"}
+{"ticket_id": "TCK-003829", "text": "I am trying to see the fucking withdrawal charges", "intent": "check_cancellation_fee", "category": "CANCEL", "flags": "BLMW"}
+{"ticket_id": "TCK-011060", "text": "I never use the student account, can you help me to cancel it?", "intent": "delete_account", "category": "ACCOUNT", "flags": "BCEIL"}
+{"ticket_id": "TCK-002724", "text": "i have issues trying to edit my delivery address", "intent": "change_shipping_address", "category": "SHIPPING", "flags": "BLMQ"}
+{"ticket_id": "TCK-015161", "text": "i dont know  what i have to do to download the bill #37777", "intent": "get_invoice", "category": "INVOICE", "flags": "BLQZ"}
+{"ticket_id": "TCK-022702", "text": "I do not know how to submit some feedback for a servicd", "intent": "review", "category": "FEEDBACK", "flags": "BEZ"}
+{"ticket_id": "TCK-012116", "text": "can ya help me to see what shipment options i can choose", "intent": "delivery_options", "category": "DELIVERY", "flags": "BILMQ"}
+{"ticket_id": "TCK-006449", "text": "I try to check how long reimbursements usually take", "intent": "check_refund_policy", "category": "REFUND", "flags": "BL"}
+{"ticket_id": "TCK-008602", "text": "could you help me to speak to customer support?", "intent": "contact_customer_service", "category": "CONTACT", "flags": "BILP"}
+{"ticket_id": "TCK-002394", "text": "I try to edit the address", "intent": "change_shipping_address", "category": "SHIPPING", "flags": "BL"}
+{"ticket_id": "TCK-012082", "text": "I am calling to see what delivery methods you offer", "intent": "delivery_options", "category": "DELIVERY", "flags": "BLM"}
+{"ticket_id": "TCK-007801", "text": "I call to lodge a customer complaint against your company", "intent": "complaint", "category": "FEEDBACK", "flags": "BL"}
+{"ticket_id": "TCK-006342", "text": "I would like to see in which cases can I ask for refunds", "intent": "check_refund_policy", "category": "REFUND", "flags": "BLP"}
+{"ticket_id": "TCK-003154", "text": "where to see the early termination fees?", "intent": "check_cancellation_fee", "category": "CANCEL", "flags": "BILM"}
+{"ticket_id": "TCK-013528", "text": "want help to check whenmy package is gonna arrive", "intent": "delivery_period", "category": "DELIVERY", "flags": "BLQZ"}
+{"ticket_id": "TCK-026393", "text": "I'm waiting for a restitution of €199.81", "intent": "track_refund", "category": "REFUND", "flags": "BLQ"}
+{"ticket_id": "TCK-026274", "text": "I'm waiting for a refund of 118.99 dollrs", "intent": "track_refund", "category": "REFUND", "flags": "BQZ"}
+{"ticket_id": "TCK-023862", "text": "can huelp me setting the secondary delivery address up", "intent": "set_up_shipping_address", "category": "SHIPPING", "flags": "BILQZ"}
+{"ticket_id": "TCK-013472", "text": "could you help me to see how soon can I expect the product?", "intent": "delivery_period", "category": "DELIVERY", "flags": "BILP"}
+{"ticket_id": "TCK-024850", "text": "where do i switch to the gold account", "intent": "switch_account", "category": "ACCOUNT", "flags": "BIQ"}
+{"ticket_id": "TCK-003958", "text": "check my billINV-001910", "intent": "check_invoice", "category": "INVOICE", "flags": "BLZ"}
+{"ticket_id": "TCK-004673", "text": "check invoices from Evelyn Miller", "intent": "check_invoice", "category": "INVOICE", "flags": "BKM"}
+{"ticket_id": "TCK-025659", "text": "can uhelp me seethe ETA of order ORD-001068", "intent": "track_order", "category": "ORDER", "flags": "BILQZ"}
+{"ticket_id": "TCK-021016", "text": "reporting registration issues", "intent": "registration_problems", "category": "ACCOUNT", "flags": "BKM"}
+{"ticket_id": "TCK-025273", "text": "i need assistance to check the eta of the order ORD-001303", "intent": "track_order", "category": "ORDER", "flags": "BQ"}
+{"ticket_id": "TCK-005411", "text": "I have to see your allowed payment methods", "intent": "check_payment_methods", "category": "PAYMENT", "flags": "BL"}
+{"ticket_id": "TCK-000838", "text": "problems with cancelling purchase ORD-002220", "intent": "cancel_order", "category": "ORDER", "flags": "BLM"}
+{"ticket_id": "TCK-022707", "text": "where do I submit feedback for your products?", "intent": "review", "category": "FEEDBACK", "flags": "BIL"}
+{"ticket_id": "TCK-001814", "text": "i want help removing a product from order ORD-001208", "intent": "change_order", "category": "ORDER", "flags": "BLQ"}
+{"ticket_id": "TCK-013995", "text": "modifying student account", "intent": "edit_account", "category": "ACCOUNT", "flags": "BKL"}
+{"ticket_id": "TCK-006989", "text": "need to file a bloody consumer reclamation how can i do it", "intent": "complaint", "category": "FEEDBACK", "flags": "BCILQW"}
+{"ticket_id": "TCK-025087", "text": "seeing order ORD-818015 current status", "intent": "track_order", "category": "ORDER", "flags": "BKL"}
+{"ticket_id": "TCK-015216", "text": "I'm trying to get my damn bills from Chloe Rodriguez", "intent": "get_invoice", "category": "INVOICE", "flags": "BLMQW"}
+{"ticket_id": "TCK-008959", "text": "want assistance talking with somebody", "intent": "contact_human_agent", "category": "CONTACT", "flags": "BLQ"}
+{"ticket_id": "TCK-010684", "text": "I need an business account", "intent": "create_account", "category": "ACCOUNT", "flags": "BLZ"}
+{"ticket_id": "TCK-006262", "text": "I want to see under what circumstances can I request refunds", "intent": "check_refund_policy", "category": "REFUND", "flags": "BL"}
+{"ticket_id": "TCK-020560", "text": "help to retrieve the password of my profile", "intent": "recover_password", "category": "ACCOUNT", "flags": "BL"}
+{"ticket_id": "TCK-004261", "text": "what do i have to do to check my invoice from Julian Perez", "intent": "check_invoice", "category": "INVOICE", "flags": "BILQ"}
+{"ticket_id": "TCK-018617", "text": "I don't know what I have to do to notify of a payment error", "intent": "payment_issue", "category": "PAYMENT", "flags": "BL"}
+{"ticket_id": "TCK-015322", "text": "i want help downloading  my invoice from Charlotte Harris", "intent": "get_invoice", "category": "INVOICE", "flags": "BLQZ"}
+{"ticket_id": "TCK-022538", "text": "is there a seection to send my feedback for ur services", "intent": "review", "category": "FEEDBACK", "flags": "BILQZ"}
+{"ticket_id": "TCK-002285", "text": "there are problems trying to edit my address", "intent": "change_shipping_address", "category": "SHIPPING", "flags": "BLM"}
+{"ticket_id": "TCK-004569", "text": "I need help giving a quick look at the bill #00108", "intent": "check_invoice", "category": "INVOICE", "flags": "BL"}
+{"ticket_id": "TCK-005046", "text": "how do I check what payment payment modalities are accepted?", "intent": "check_payment_methods", "category": "PAYMENT", "flags": "BIL"}
+{"ticket_id": "TCK-025595", "text": "I try to check purchase ORD-000252 current status", "intent": "track_order", "category": "ORDER", "flags": "BL"}
+{"ticket_id": "TCK-023893", "text": "wanna switch to th basic account could uhelp me", "intent": "switch_account", "category": "ACCOUNT", "flags": "BCIPQZ"}
+{"ticket_id": "TCK-021720", "text": "I need to report a fucking registration error, help me", "intent": "registration_problems", "category": "ACCOUNT", "flags": "BCLW"}
+{"ticket_id": "TCK-004374", "text": "I need assistance to look for the invoice #00108", "intent": "check_invoice", "category": "INVOICE", "flags": "BL"}
+{"ticket_id": "TCK-021649", "text": "where do I inform of an error with sign-up?", "intent": "registration_problems", "category": "ACCOUNT", "flags": "BIL"}
+{"ticket_id": "TCK-011613", "text": "I want information about the termination of a business account", "intent": "delete_account", "category": "ACCOUNT", "flags": "BL"}
+{"ticket_id": "TCK-010117", "text": "can you help me create a freemium account?", "intent": "create_account", "category": "ACCOUNT", "flags": "BI"}
+{"ticket_id": "TCK-016407", "text": "i try to obtain restitutions of money", "intent": "get_refund", "category": "REFUND", "flags": "BLMQ"}
+{"ticket_id": "TCK-019789", "text": "i do not know what to do to earn an item", "intent": "place_order", "category": "ORDER", "flags": "BELQ"}
+{"ticket_id": "TCK-018451", "text": "I have to inform of damn payment errors, how can I do it?", "intent": "payment_issue", "category": "PAYMENT", "flags": "BCILMW"}
+{"ticket_id": "TCK-020858", "text": "I am trying to find information about a forgotten PIN code", "intent": "recover_password", "category": "ACCOUNT", "flags": "BEL"}
+{"ticket_id": "TCK-014485", "text": "modify info on corporate account", "intent": "edit_account", "category": "ACCOUNT", "flags": "BKLQ"}
+{"ticket_id": "TCK-011853", "text": "I need assistance to delete my family account", "intent": "delete_account", "category": "ACCOUNT", "flags": "BL"}
+{"ticket_id": "TCK-024031", "text": "help me use the basic profile", "intent": "switch_account", "category": "ACCOUNT", "flags": "BL"}
+{"ticket_id": "TCK-015320", "text": "getting bills from Mia Davis", "intent": "get_invoice", "category": "INVOICE", "flags": "BKLM"}
+{"ticket_id": "TCK-008916", "text": "can I talk to a person?", "intent": "contact_human_agent", "category": "CONTACT", "flags": "BIL"}
+{"ticket_id": "TCK-017297", "text": "cancel the subscription to your corporate newsletter", "intent": "newsletter_subscription", "category": "SUBSCRIPTION", "flags": "BL"}
+{"ticket_id": "TCK-017731", "text": "I have to receive your newsletter, can you help me?", "intent": "newsletter_subscription", "category": "SUBSCRIPTION", "flags": "BCIL"}
+{"ticket_id": "TCK-008234", "text": "i want help to see what hours i can call custmer service", "intent": "contact_customer_service", "category": "CONTACT", "flags": "BLQZ"}
+{"ticket_id": "TCK-012718", "text": "I want to check what methods for delivery you offer", "intent": "delivery_options", "category": "DELIVERY", "flags": "BLM"}
+{"ticket_id": "TCK-009572", "text": "I try to talk to a live agent", "intent": "contact_human_agent", "category": "CONTACT", "flags": "BL"}
+{"ticket_id": "TCK-005402", "text": "how to list the allowed payment modalities?", "intent": "check_payment_methods", "category": "PAYMENT", "flags": "BIL"}
+{"ticket_id": "TCK-009863", "text": "can ya help me contacting an operator", "intent": "contact_human_agent", "category": "CONTACT", "flags": "BILQ"}
+{"ticket_id": "TCK-009697", "text": "could ya help me to speak wqith somebody", "intent": "contact_human_agent", "category": "CONTACT", "flags": "BILPQZ"}
+{"ticket_id": "TCK-017413", "text": "I have to unsuscribe to your company newsletter, I need help", "intent": "newsletter_subscription", "category": "SUBSCRIPTION", "flags": "BCLZ"}
+{"ticket_id": "TCK-013277", "text": "I want to check how long it takes for the order to arrive", "intent": "delivery_period", "category": "DELIVERY", "flags": "BL"}
+{"ticket_id": "TCK-024020", "text": "help using the premium account", "intent": "switch_account", "category": "ACCOUNT", "flags": "B"}
+{"ticket_id": "TCK-018372", "text": "i need help to inform of troubls with payment", "intent": "payment_issue", "category": "PAYMENT", "flags": "BLMQZ"}
+{"ticket_id": "TCK-002108", "text": "tgell me more about a shipping address update", "intent": "change_shipping_address", "category": "SHIPPING", "flags": "BLZ"}
+{"ticket_id": "TCK-003877", "text": "can you help me see the damn withdrawal charge?", "intent": "check_cancellation_fee", "category": "CANCEL", "flags": "BILW"}
+{"ticket_id": "TCK-004938", "text": "I'm trying to check ur payment modalitise", "intent": "check_payment_methods", "category": "PAYMENT", "flags": "BLQZ"}
+{"ticket_id": "TCK-023091", "text": "need assistance submitting a shipping address", "intent": "set_up_shipping_address", "category": "SHIPPING", "flags": "BLQ"}
+{"ticket_id": "TCK-007785", "text": "I am unhappy with your work, how do I lodge a reclamation?", "intent": "complaint", "category": "FEEDBACK", "flags": "BCIL"}
+{"ticket_id": "TCK-023776", "text": "I have troubles setting up a new shipping address", "intent": "set_up_shipping_address", "category": "SHIPPING", "flags": "BLM"}
+{"ticket_id": "TCK-000034", "text": "i do not know how i can cancel purchase ORD-002510", "intent": "cancel_order", "category": "ORDER", "flags": "BELQ"}
+{"ticket_id": "TCK-024765", "text": "I do not know how I can switch to tbe student account", "intent": "switch_account", "category": "ACCOUNT", "flags": "BEZ"}
+{"ticket_id": "TCK-007810", "text": "I need help to file a consumer reclamation", "intent": "complaint", "category": "FEEDBACK", "flags": "BL"}
+{"ticket_id": "TCK-015555", "text": "send me bills from Emma Lee", "intent": "get_invoice", "category": "INVOICE", "flags": "BKLM"}
+{"ticket_id": "TCK-025017", "text": "wana check the ETA of order ORD-000268 will ya help me", "intent": "track_order", "category": "ORDER", "flags": "BCILPQZ"}
+{"ticket_id": "TCK-018328", "text": "can ya help me to notify of an error with online payment", "intent": "payment_issue", "category": "PAYMENT", "flags": "BILQ"}
+{"ticket_id": "TCK-020803", "text": "how can i find information about my key recovery", "intent": "recover_password", "category": "ACCOUNT", "flags": "BILQ"}
+{"ticket_id": "TCK-017614", "text": "need help unsubscribing from ur newsletter", "intent": "newsletter_subscription", "category": "SUBSCRIPTION", "flags": "BLQ"}
+{"ticket_id": "TCK-001661", "text": "i do not know how to change a product of order ORD-002388", "intent": "change_order", "category": "ORDER", "flags": "BELQ"}
+{"ticket_id": "TCK-003327", "text": "how to see the early termination penalties?", "intent": "check_cancellation_fee", "category": "CANCEL", "flags": "BILM"}
+{"ticket_id": "TCK-001176", "text": "help me to change several products of purchase ORD-001413", "intent": "change_order", "category": "ORDER", "flags": "BLM"}
+{"ticket_id": "TCK-023632", "text": "there is an issue submitting a deilvery address", "intent": "set_up_shipping_address", "category": "SHIPPING", "flags": "BLZ"}
+{"ticket_id": "TCK-000565", "text": "i want assistance canceling order ORD-001690", "intent": "cancel_order", "category": "ORDER", "flags": "BQ"}
+{"ticket_id": "TCK-019067", "text": "how to shop some articles?", "intent": "place_order", "category": "ORDER", "flags": "BILM"}
+{"ticket_id": "TCK-026361", "text": "I do not know how to check the rebate current status", "intent": "track_refund", "category": "REFUND", "flags": "BEL"}
+{"ticket_id": "TCK-025985", "text": "help to see if there is anything wrong with the refund", "intent": "track_refund", "category": "REFUND", "flags": "BL"}
+{"ticket_id": "TCK-020553", "text": "I need information about my access key retrieval", "intent": "recover_password", "category": "ACCOUNT", "flags": "BL"}
+{"ticket_id": "TCK-001950", "text": "edit order ORD-002143", "intent": "change_order", "category": "ORDER", "flags": "BKL"}
+{"ticket_id": "TCK-009953", "text": "open gold account for wife", "intent": "create_account", "category": "ACCOUNT", "flags": "BKL"}
+{"ticket_id": "TCK-008531", "text": "i dont know what to do to talk to customer support", "intent": "contact_customer_service", "category": "CONTACT", "flags": "BLQ"}
+{"ticket_id": "TCK-014350", "text": "edit details on freemium account", "intent": "edit_account", "category": "ACCOUNT", "flags": "BKLM"}
+{"ticket_id": "TCK-021326", "text": "I want help to inform of problems with a sign-up", "intent": "registration_problems", "category": "ACCOUNT", "flags": "BLM"}
+{"ticket_id": "TCK-012303", "text": "what are the available shipment options?", "intent": "delivery_options", "category": "DELIVERY", "flags": "BIL"}
+{"ticket_id": "TCK-008165", "text": "I want to check at what time customer support available is", "intent": "contact_customer_service", "category": "CONTACT", "flags": "BL"}
+{"ticket_id": "TCK-019312", "text": "need help to earn an item", "intent": "place_order", "category": "ORDER", "flags": "BLQ"}
+{"ticket_id": "TCK-020870", "text": "where could I retrieve my profile access key?", "intent": "recover_password", "category": "ACCOUNT", "flags": "BILP"}
+{"ticket_id": "TCK-018993", "text": "i want assistance acquiring a few of ur article", "intent": "place_order", "category": "ORDER", "flags": "BLMQ"}
+{"ticket_id": "TCK-004255", "text": "i have lost my bill from Lucas Martin find it for me", "intent": "check_invoice", "category": "INVOICE", "flags": "BCLQV"}
+{"ticket_id": "TCK-012684", "text": "do you ship  to India?", "intent": "delivery_options", "category": "DELIVERY", "flags": "BILSZ"}
+{"ticket_id": "TCK-006394", "text": "I try to see in what situations can I ask for reimbursements", "intent": "check_refund_policy", "category": "REFUND", "flags": "BL"}
