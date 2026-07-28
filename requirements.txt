@@ -13,6 +13,9 @@ langchain-anthropic>=0.3
 langchain-openai>=0.3
 langchain-ollama>=0.3
 
+# Phase 6 — Reply Agent (ReAct 그래프)
+langgraph>=0.2
+
 # Phase 3 — RAG 인프라 (BGE-M3 임베딩 + BGE-reranker + ChromaDB, 전부 CPU)
 chromadb>=0.5
 FlagEmbedding>=1.3

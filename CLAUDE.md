@@ -130,7 +130,7 @@ evals/golden/     evals/runners/     data/raw/     .env
 
 - **reply 모듈**: LangGraph 노드 순서(`plan → agent → judge → validate`) 변경 시 반드시 설계 단계 승인. `judge`는 **도구가 아니라 그래프 노드**이며 생성과 다른 백엔드를 호출한다 — 도구로 되돌리지 말 것
 - **reply/tools.py**: 모든 도구는 **LLM 호출 없이** 순수 계산·검색·저장만. 도구 안에 LLM을 중첩하지 말 것
-- **`save_draft` 게이트 4종**: ① **마스킹되지 않은 원본** PII 패턴 출현(마스킹 토큰 자체는 허용) ② 도구 결과에 없는 금액·날짜·환불 확약 ③ 금지 표현 블랙리스트 ④ 정책 인용 필수 인텐트인데 인용 0건. 임의로 완화하지 말 것. 거부 시 사유를 도구 응답으로 되돌려 에이전트가 자기교정하게 한다
+- **`save_draft` 게이트 5종**: ① **마스킹되지 않은 원본** PII 패턴 출현(마스킹 토큰 자체는 허용) ② 도구 결과에 없는 금액·날짜·환불 확약 ③ 금지 표현 블랙리스트 ④ 정책 인용 필수 인텐트인데 인용 0건 ⑤ 상담원 최종 책임 고지 문구 누락(모델이 프롬프트 지시를 빼먹는 경우가 실측됨 — 프롬프트만 믿지 않고 게이트로 강제). 임의로 완화하지 말 것. 거부 시 사유를 도구 응답으로 되돌려 에이전트가 자기교정하게 한다
 - **에스컬레이션**: `escalated`는 실패가 아니라 정상 종료 상태다. 조건 E1–E8은 전부 **코드**가 판정한다(DESIGN.md 3.1절). budget 소진 시 미달 초안을 그냥 내보내지 말 것 — **초안이 없는 것이 잘못된 초안보다 낫다**
 - **judge.py**: 출력 스키마 고정 — `{policy_compliance:1-5, tone:1-5, violations[], reasoning}`. 통과 조건은 `policy≥4 AND tone≥4 AND high severity 0건`. 루브릭 텍스트는 `prompts/judge_*.md`에 두고 변경 시 단독 커밋
 - **triage 모듈**: 에이전트를 쓰지 않는다(단일 호출 + structured output). "여기에도 ReAct를 넣자"는 제안 금지. 인텐트 **27개 / 카테고리 11개**(`ACCOUNT` `CANCEL` `CONTACT` `DELIVERY` `FEEDBACK` `INVOICE` `ORDER` `PAYMENT` `REFUND` `SHIPPING` `SUBSCRIPTION`) — Bitext 라벨을 임의로 재정의하지 말 것 (DESIGN.md 4.1절 실측표 참고)

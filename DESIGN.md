@@ -102,7 +102,7 @@
 | `escalate_to_human` | 스스로 처리 불가 판단 시 명시적 에스컬레이션 신호 | 함수 |
 | `submit_for_review` | 작성 완료 신호(인자 없음) | 함수 |
 
-**`save_draft`의 결정론적 게이트 4종**
+**`save_draft`의 결정론적 게이트 5종**
 
 | # | 검사 | 거부 조건 |
 |---|---|---|
@@ -110,6 +110,7 @@
 | ② | **근거 없는 확약** | `search_policy`/`lookup_order`가 반환한 적 없는 금액·날짜·환불 확약이 초안에 포함 |
 | ③ | **금지 표현** | 규칙 기반 블랙리스트 — 법적 확약(`guarantee`, `we are liable`), 타사 비방, 무조건 보상 약속 |
 | ④ | **정책 인용 존재** | 정책 인용이 **필수**인 인텐트(3절 매핑)인데 인용된 조항이 0건 |
+| ⑤ | **상담원 최종 책임 고지** | "This is a draft prepared by an AI assistant..." 고지 문구가 초안에 그대로 없음(로컬 모델이 프롬프트 지시를 빼먹는 사례가 실측되어, 프롬프트 신뢰 대신 게이트로 강제하기로 결정 — 2026-07-28) |
 
 거부 시 사유를 도구 응답으로 되돌려 에이전트가 스스로 교정하게 한다(자기교정 루프).
 
@@ -172,7 +173,7 @@ class ReplyState(TypedDict):
 | E4 | Bitext `flags`에 `W`(offensive language) 포함 | triage 직후 |
 | E5 | 에이전트가 `escalate_to_human` 호출 | agent 중 |
 | E6 | `lookup_order`가 해당 주문을 못 찾음 | agent 중 |
-| E7 | `save_draft` 게이트를 **3회 연속** 통과 못함 | agent 중 |
+| E7 | `save_draft` 게이트를 `SAVE_DRAFT_FAIL_STREAK`회(기본 3) 연속 통과 못함 | agent 중 |
 | E8 | `budget` 소진 후에도 `validate` 미통과 | validate 후 |
 
 > E3(complaint)를 자동 초안 대상에서 뺀 이유: 불만 티켓은 보상 여부·금액 판단이 섞이는데, 이건 정책 문서만으로 결정되지 않는 **제품 판단**이다. 초깃값으로 전량 에스컬레이션하고, 에스컬레이션 FP율이 과하면 그때 세분화한다.
@@ -217,6 +218,7 @@ class ReplyState(TypedDict):
 | `REPLY_TURN_CAP` | **12** | agent 노드 내부 LLM 왕복 상한. 정상 경로는 정책검색 1–2 + 주문조회 1 + 형식검증 1 + 저장 1 + 제출 1 ≈ 6회. 자기교정 여유를 포함해 2배. (분필은 문항 세트라 14였음) |
 | `REPLY_BUDGET` | **2** | validate 미달 시 agent 재시도 횟수. 단일 초안이라 3회차가 유의미하게 나아진다는 근거가 없다 — 그럴 바엔 에스컬레이션이 HITL 원칙과 일관 |
 | `MALFORMED_TOOL_CALL_STREAK` | **3** | tool_call 형식이 깨졌을 때 재작성 요청 연속 허용 횟수(분필과 동일). turn cap이 항상 최종 방어선 |
+| `SAVE_DRAFT_FAIL_STREAK` | **3** | 에스컬레이션 E7("save_draft 게이트 3회 연속 실패") 임계값. `MALFORMED_TOOL_CALL_STREAK`와는 별개 개념(도구 호출 JSON 형식 오류 vs 저장 게이트 내용 거부)이라 별도 변수로 분리(2026-07-28, Phase 6 구현 중 발견 — 원래 3.1절엔 "3회 연속"만 서술되고 상수명이 없었음) |
 | `JUDGE_PASS_POLICY` | **≥ 4 / 5** | validate 통과 조건 |
 | `JUDGE_PASS_TONE` | **≥ 4 / 5** | validate 통과 조건 |
 | 청킹 크기 | **300–500 토큰, overlap 50** | 조항 단위를 우선하되 500 초과 시 문장 경계로 분할. 각 청크 앞에 **조항 헤더를 반복 삽입**한다(인용 정확도가 게이트 ④에 직결) |
@@ -513,6 +515,9 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 | `SHOP_DB_PATH` | 합성 주문·고객 DB | `./data/synthetic/shop.db` |
 | `TRIAGE_CONFIDENCE_THRESHOLD` | 에스컬레이션 E1 임계값 | `0.70` |
 | `REPLY_BUDGET` / `REPLY_TURN_CAP` | 재시도·턴 상한 | `2` / `12` |
+| `MALFORMED_TOOL_CALL_STREAK` | tool_call 형식 오류 연속 허용 횟수 | `3` |
+| `SAVE_DRAFT_FAIL_STREAK` | 에스컬레이션 E7 임계값 | `3` |
+| `JUDGE_PASS_POLICY` / `JUDGE_PASS_TONE` | validate 통과 임계값(1-5 척도) | `4` / `4` |
 | `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT` | LangSmith (기본 비활성, 옵트인) | `false` / — / `cs-assistant` |
 
 ---
