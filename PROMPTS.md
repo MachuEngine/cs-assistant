@@ -308,6 +308,81 @@ Next.js로 상담원 검토 UI를 만들어줘.
 
 ---
 
+## Phase 11 — Slack 에스컬레이션 알림 (MCP 연동)
+
+> **설계는 `MCP_INTEGRATION.md`에 확정돼 있다. 새로 설계하지 말고 그대로 구현한다.**
+> 대상 서버(`zencoderai/slack-mcp`)는 실제 컨테이너로 e2e 검증까지 마쳤다 —
+> `initialize` → `tools/list` → `tools/call` 전 구간 + 실제 Slack 발송 성공(2026-07-29).
+
+```
+Phase 11 — Slack 에스컬레이션 알림 MCP 연동을 구현해줘.
+
+지금 escalated outcome은 막다른 길이다. E1~E8 판정은 전부 정확히 돌아가는데
+실제로 사람을 부르는 경로가 없다. MCP로 Slack 알림을 보내 이걸 채운다.
+
+## 먼저 읽을 것 (순서대로, 전부 읽고 시작)
+1. CLAUDE.md — 보안 하드룰·보호 경로·모듈별 주의사항. 최우선 규칙이다.
+2. MCP_INTEGRATION.md — 확정된 설계 명세서. 이대로 구현한다.
+3. app/main.py, app/modules/reply/{graph,routing}.py,
+   app/common/llm/{base,factory}.py, app/common/llm/backends/{runpod,chat_runpod}.py
+   — 기존 컨벤션 파악용. llm 팩토리 패턴과 runpod 어댑터 구조를 그대로 따라라.
+
+## 만들 것 (MCP_INTEGRATION.md 7절 그대로)
+- app/common/mcp/ — base(ABC) / client(MCP 프로토콜) / factory / backends{noop,slack}
+- app/main.py — ticket_ref 필드, _notify_escalation() 헬퍼, 에스컬레이션 확정
+  4개 지점 호출, SSE stage:"notify" 이벤트
+- requirements.txt — mcp>=1.28,<2 (상한 필수, 4.1절)
+- docker-compose.yml — slack-mcp 서비스 (8.2절 실측값 그대로)
+- .env.example — 8.3절 변수들
+- DESIGN.md 7·8·10절, CLAUDE.md 모듈별 주의사항 갱신
+- tests/test_mcp.py
+
+Notion·GitHub 연동은 하지 마라(6절에 제외 사유).
+
+## 실측으로 확정된 값 (추측하지 말 것)
+- 프로토콜: 2025-03-26 (구 스펙, stateful). mcp-session-id 헤더 발급됨
+- SDK 핀: mcp>=1.28,<2 — v2는 2026-07-28 stateless라 서버와 세대가 안 맞는다
+- 엔드포인트: 루트가 아니라 /mcp
+- MCP 서버 필수 env: SLACK_BOT_TOKEN, SLACK_TEAM_ID, AUTH_TOKEN(고정 필수),
+  실행 인자 --transport http
+- 발송 도구: slack_post_message (channel_id, text) — 단, 코드는 이걸
+  하드코딩하지 말고 tools/list로 발견해야 한다
+
+## 반드시 지킬 것
+- 도구 이름 하드코딩 금지. tools/list로 발견하고 서버가 준 inputSchema로
+  인자를 구성한다(4.3절). SLACK_MCP_TOOL_NAME은 자동 선택이 틀렸을 때의
+  탈출구일 뿐 발견을 건너뛰는 용도가 아니다.
+- 도구 선택 시 required 인자를 전부 채울 수 있는지 먼저 거른다. 실측하니
+  스키마 필터만으로는 slack_reply_to_thread(thread_ts 필요)도 후보로 남는다.
+- fail-soft. 알림 실패가 멀쩡한 에스컬레이션 판정을 outcome:failed로
+  뒤집으면 안 된다. 백엔드 내부 + 헬퍼 2중 방어(3.5절).
+- 페이로드에 티켓 본문·초안·customer_id 절대 금지(하드룰 3). 식별자와 분류
+  메타데이터만. E1~E8 설명은 routing.py의 ESCALATION_REASONS 재사용.
+- app/modules/reply/tools.py와 graph.py의 노드 순서·가드레일은 건드리지 마라.
+- 주석·문서는 한국어. evals/golden/·evals/runners/·data/raw/·.env는 보호 경로.
+
+## 기존 테스트 1건 갱신
+tests/test_api.py::test_reply_stream_escalated_has_no_draft_anywhere가 SSE
+이벤트 개수를 2로 단정하는데 notify 이벤트가 추가되면 3이 된다.
+개수만 갱신하고 assert not any("draft" in e ...)는 절대 건드리지 마라.
+
+## 검증 (실제로 실행하고 결과 보고)
+1. pytest -q -m "not rag and not llm_live" — 현재 107 passed가 기준선.
+2. MCP_INTEGRATION.md 7절 검증계획 1~5 커버. 특히 가드레일 테스트(페이로드에
+   본문·초안·customer_id·PII 없음) 필수.
+3. 테스트는 전부 monkeypatch — 네트워크 호출하는 테스트 만들지 마라.
+4. 실제 Slack 발송은 이미 사람이 검증했다(MCP_INTEGRATION.md 2절). 다시
+   시도하지 말고 그 기록을 참조해라.
+
+## 하지 말 것
+- 커밋·푸시 금지(명시 요청 시에만). 검증 없이 완료 선언 금지.
+- 요청 안 한 추상화 추가 금지(backends/notion.py 같은 것 만들지 마라).
+
+3회 실패하면 멈추고 각 시도의 가정과 오류를 보고해라(.claude/rules/dev-loop.md).
+```
+
+---
+
 ## 진행 원칙
 
 - **한 Phase = 한 커밋.** 완료 기준 통과 후에만 다음으로.
