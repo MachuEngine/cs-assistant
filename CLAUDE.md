@@ -136,3 +136,4 @@ evals/golden/     evals/runners/     data/raw/     .env
 - **triage 모듈**: 에이전트를 쓰지 않는다(단일 호출 + structured output). "여기에도 ReAct를 넣자"는 제안 금지. 인텐트 **27개 / 카테고리 11개**(`ACCOUNT` `CANCEL` `CONTACT` `DELIVERY` `FEEDBACK` `INVOICE` `ORDER` `PAYMENT` `REFUND` `SHIPPING` `SUBSCRIPTION`) — Bitext 라벨을 임의로 재정의하지 말 것 (DESIGN.md 4.1절 실측표 참고)
 - **common/llm**: 새 백엔드 추가 시 `factory.py`와 `.env.example` 양쪽 갱신
 - **chat_runpod 어댑터**: 변경 시 로컬 Ollama로 먼저 검증 후 RunPod 적용. `/run` 제출 후 **동일 job_id를 폴링**할 것 — 재제출은 중복 실행이 된다
+- **common/mcp(Phase 11, 에스컬레이션 알림)**: MCP 호출을 **`reply/tools.py`에 넣지 말 것** — 도구는 순수 계산만이라는 규칙과 충돌하고, 도구는 동기 호출이며 재시도 루프 안이라 중복 발송 위험이 있다. 호출은 항상 `app/main.py`(서비스 계층)에서만. **fail-soft**가 계약이다(LLM 백엔드의 fail-fast와 의도적으로 반대) — 알림 실패가 `outcome=failed`로 뒤집으면 안 된다. 알림 페이로드에 티켓 본문·초안·`customer_id`를 절대 넣지 말 것(하드룰 3). 도구 이름은 하드코딩하지 말고 `tools/list`로 발견할 것 — 설계·실측 근거는 `MCP_INTEGRATION.md`

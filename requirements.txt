@@ -25,3 +25,10 @@ overrides>=7.7  # chromadb의 전이 의존성이지만 telemetry.py가 직접 i
 # tokenizer.prepare_for_model()에 의존한다(패키지 메타데이터의 <6.0.0 제약은
 # 이 비호환을 못 막음, 2026-07-28 실측). 4.x 최신판으로 고정.
 transformers==4.57.6
+
+# Phase 11 — Slack 에스컬레이션 알림 (MCP 연동, MCP_INTEGRATION.md)
+# 대상 서버(zencoderai/slack-mcp)가 MCP SDK v1.13.2(구 스펙, stateful)로
+# 동작함을 실측 확인(2026-07-29) — 2026-07-28 stateless(mcp 2.x)와 세대가
+# 안 맞아 상한을 반드시 <2로 둔다. transformers 상한 미비로 이미 한 번
+# 깨진 전례(위 참고)를 반복하지 않는다.
+mcp>=1.28,<2

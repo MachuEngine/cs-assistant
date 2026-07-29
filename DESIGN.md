@@ -466,12 +466,18 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 |---|---|---|---|
 | `GET` | `/health` | — | `{"status": "ok"}` (인증 불필요) |
 | `POST` | `/triage` | `{ticket_text, flags?}` | `{intent, category, confidence, requires_human, reason}` |
-| `POST` | `/reply` | `{ticket_text, customer_id?, flags?}` | `{outcome, draft?, cited_policies?, tools_used?, escalation_reason?, judge_result?}` |
+| `POST` | `/reply` | `{ticket_text, customer_id?, flags?, ticket_ref?}` | `{outcome, draft?, cited_policies?, tools_used?, escalation_reason?, judge_result?}` |
 | `POST` | `/reply/stream` | 동일 | SSE — 진행 이벤트 스트리밍 |
 
 - `/health` 외 전 엔드포인트는 `X-API-Key: $CS_API_KEY` 서버 간 인증 요구
-- SSE 이벤트: `{"status": "progress"|"done"|"error", ...}`. 내부 예외 상세는 노출하지 않는다
+- SSE 이벤트: `{"status": "progress"|"done"|"error", ...}`. 내부 예외 상세는 노출하지 않는다.
+  `progress` 단계는 `stage: "triage"|"plan"|"agent"|"judge"|"validate"|"notify"` — `notify`는
+  에스컬레이션이 확정됐을 때만 `done` 직전에 한 번 나온다(Phase 11)
 - 동시 요청 제한: `asyncio.Semaphore(2)` — 획득 실패 시 429 (분필과 동일)
+- `ticket_ref`(선택, 불투명 문자열): 호출한 외부 CS 시스템의 티켓 ID/URL. 이 서비스는
+  티켓을 영구 저장하지 않으므로(9절 하드룰) 내부 `REQ-` ID로는 상담원이 원본으로 돌아갈
+  수 없다 — 에스컬레이션 알림에 그대로 되돌려주는 용도로만 쓰고 해석하지 않는다
+  (Phase 11, `MCP_INTEGRATION.md` 5절)
 
 ---
 
@@ -519,6 +525,12 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 | `SAVE_DRAFT_FAIL_STREAK` | 에스컬레이션 E7 임계값 | `3` |
 | `JUDGE_PASS_POLICY` / `JUDGE_PASS_TONE` | validate 통과 임계값(1-5 척도) | `4` / `4` |
 | `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT` | LangSmith (기본 비활성, 옵트인) | `false` / — / `cs-assistant` |
+| `MCP_NOTIFIER` | 에스컬레이션 알림 백엔드(Phase 11) — `noop`/`slack`. 미설정 시 조용히 비활성(fail-soft) | `noop` |
+| `SLACK_MCP_URL` / `SLACK_MCP_TOKEN` | Slack MCP 서버 엔드포인트(`/mcp` 경로 포함) · 앞단 인증 토큰 | — |
+| `SLACK_ESCALATION_CHANNEL` | 알림 보낼 Slack 채널 ID(`C…`) | — |
+| `SLACK_MCP_TOOL_NAME` | 도구 자동 발견이 틀렸을 때만 지정하는 탈출구 | — |
+| `MCP_NOTIFY_TIMEOUT` | 알림 호출 타임아웃(초) | `5` |
+| `SLACK_BOT_TOKEN` / `SLACK_TEAM_ID` | `xoxb-…` 봇 토큰·워크스페이스 ID — **MCP 서버 컨테이너**가 씀(우리 앱은 안 읽음) | — |
 
 ---
 
@@ -575,6 +587,20 @@ app/common/llm/
 ### 파이프라인 규칙
 
 파이프라인 코드에서 `ChatAnthropic`을 **직접 import 하지 않는다.** 항상 `app/common/llm/` 인터페이스를 경유한다. 이 규칙이 깨지면 벤더 전환 실험 자체가 불가능해진다.
+
+### MCP 연동 — 세 번째 벤더 판단 사례 (Phase 11)
+
+Slack 에스컬레이션 알림은 **표준 프로토콜(MCP)이 있고 공식 SDK도 있는** 경우다 — 위
+판단 기준표에서 "정식 지원으로 충분" 쪽에 가깝지만, RunPod과 달리 표준화된 프로토콜
+자체(공식 SDK)를 직접 다루는 게 정식 경로라는 점이 다르다. 반면 "Slack MCP 서버"는
+공식 단일 구현이 없고 커뮤니티 구현마다 도구 이름·인자가 갈린다(조사 3종 비교,
+`MCP_INTEGRATION.md` 2절) — 그래서 도구를 하드코딩하지 않고 `tools/list`로 **매번
+발견**한다. 벤더 고정(RunPod처럼 한 곳에 맞춰 어댑터를 짬)과 프로토콜 발견(MCP처럼
+런타임에 상대를 알아내야 함) 둘 다 이 프로젝트에서 실제로 다뤄본 셈이다.
+
+설계·실측 검증 전체는 `MCP_INTEGRATION.md` 참고 — 대상 서버 컨테이너를 실제로 띄워
+`initialize → tools/list → tools/call` 전 구간과 실제 Slack 발송까지 확인했다
+(2026-07-29).
 
 ---
 

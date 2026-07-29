@@ -252,11 +252,151 @@ def test_reply_stream_escalated_has_no_draft_anywhere(monkeypatch):
         "/reply/stream", json={"ticket_text": "let me talk to a human"}, headers=HEADERS
     )
     events = _parse_sse_events(response.text)
-    assert len(events) == 2  # triage progress + done(escalated), agent 단계 없음
+    # triage progress + notify progress(Phase 11) + done(escalated), agent 단계 없음
+    assert len(events) == 3
+    assert events[1] == {"status": "progress", "stage": "notify"}
     final = events[-1]
     assert final == {"status": "done", "outcome": "escalated", "escalation_reason": "E2"}
     # 초안을 흐릿하게라도 흘리지 않는다 — draft 관련 키가 전혀 없어야 함
     assert not any("draft" in e for e in events)
+
+
+# --- Phase 11: 에스컬레이션 알림 4개 지점 배선 -------------------------------
+
+class _FakeNotifier:
+    """get_notifier()를 대체해 notify_escalation 호출 여부·인자를 기록한다."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def notify_escalation(self, **kwargs):
+        self.calls.append(kwargs)
+        return True
+
+
+def test_reply_notifies_on_pre_agent_escalation(monkeypatch):
+    fake = _FakeNotifier()
+    monkeypatch.setattr(main, "triage_ticket", _fake_triage_escalated)
+    monkeypatch.setattr(main, "get_notifier", lambda: fake)
+
+    response = client.post(
+        "/reply",
+        json={"ticket_text": "let me talk to a human", "ticket_ref": "ZENDESK-42"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    assert len(fake.calls) == 1
+    call = fake.calls[0]
+    assert call["ticket_ref"] == "ZENDESK-42"
+    assert call["escalation_reason"] == "E2"
+    assert call["intent"] == "contact_human_agent"
+    # 페이로드에 본문·customer_id가 안 실린다 — 넘기는 인자 자체에 없다
+    assert "ticket_text" not in call and "customer_id" not in call
+
+
+async def _fake_run_reply_escalated_post_agent(ticket, triage_info):
+    return {
+        "outcome": "escalated",
+        "escalation_reason": "E6",
+        "draft": {"reply_text": "", "cited_policies": [], "tools_used": []},
+        "judge_result": {},
+    }
+
+
+def test_reply_notifies_on_post_agent_escalation(monkeypatch):
+    fake = _FakeNotifier()
+    monkeypatch.setattr(main, "triage_ticket", _fake_triage_ok)
+    monkeypatch.setattr(main, "run_reply", _fake_run_reply_escalated_post_agent)
+    monkeypatch.setattr(main, "get_notifier", lambda: fake)
+
+    response = client.post(
+        "/reply", json={"ticket_text": "cancel order ORD-999999"}, headers=HEADERS
+    )
+    assert response.status_code == 200
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["escalation_reason"] == "E6"
+
+
+def test_reply_does_not_notify_on_auto_draft(monkeypatch):
+    fake = _FakeNotifier()
+    monkeypatch.setattr(main, "triage_ticket", _fake_triage_ok)
+    monkeypatch.setattr(main, "run_reply", _fake_run_reply_auto_draft)
+    monkeypatch.setattr(main, "get_notifier", lambda: fake)
+
+    response = client.post("/reply", json={"ticket_text": "cancel my order"}, headers=HEADERS)
+    assert response.status_code == 200
+    assert fake.calls == []
+
+
+def test_reply_stream_notifies_on_pre_agent_escalation(monkeypatch):
+    fake = _FakeNotifier()
+    monkeypatch.setattr(main, "triage_ticket", _fake_triage_escalated)
+    monkeypatch.setattr(main, "get_notifier", lambda: fake)
+
+    response = client.post(
+        "/reply/stream",
+        json={"ticket_text": "let me talk to a human", "ticket_ref": "ZENDESK-7"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["ticket_ref"] == "ZENDESK-7"
+
+
+async def _fake_stream_reply_escalated_post_agent(ticket, triage_info):
+    yield {"status": "progress", "stage": "plan"}
+    yield {"status": "progress", "stage": "agent"}
+    yield {"status": "done", "outcome": "escalated", "escalation_reason": "E8"}
+
+
+def test_reply_stream_notifies_on_post_agent_escalation(monkeypatch):
+    fake = _FakeNotifier()
+    monkeypatch.setattr(main, "triage_ticket", _fake_triage_ok)
+    monkeypatch.setattr(main, "stream_reply", _fake_stream_reply_escalated_post_agent)
+    monkeypatch.setattr(main, "get_notifier", lambda: fake)
+
+    response = client.post(
+        "/reply/stream", json={"ticket_text": "cancel order ORD-000003"}, headers=HEADERS
+    )
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["escalation_reason"] == "E8"
+    # notify 진행 이벤트가 done 직전에 딱 한 번
+    assert [e for e in events if e.get("stage") == "notify"] == [{"status": "progress", "stage": "notify"}]
+
+
+def test_reply_stream_does_not_notify_on_auto_draft(monkeypatch):
+    fake = _FakeNotifier()
+    monkeypatch.setattr(main, "triage_ticket", _fake_triage_ok)
+    monkeypatch.setattr(main, "stream_reply", _fake_stream_reply_auto_draft)
+    monkeypatch.setattr(main, "get_notifier", lambda: fake)
+
+    response = client.post(
+        "/reply/stream", json={"ticket_text": "cancel order ORD-000003"}, headers=HEADERS
+    )
+    assert response.status_code == 200
+    assert fake.calls == []
+
+
+def test_notify_escalation_failure_does_not_flip_outcome_to_failed(monkeypatch):
+    """fail-soft 핵심 계약 — 알림 채널 장애가 멀쩡한 에스컬레이션 판정을
+    outcome=failed로 뒤집으면 안 된다(MCP_INTEGRATION.md 3.5절)."""
+
+    class _BoomNotifier:
+        async def notify_escalation(self, **kwargs):
+            raise RuntimeError("slack is down")
+
+    monkeypatch.setattr(main, "triage_ticket", _fake_triage_escalated)
+    monkeypatch.setattr(main, "get_notifier", lambda: _BoomNotifier())
+
+    response = client.post(
+        "/reply", json={"ticket_text": "let me talk to a human"}, headers=HEADERS
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "escalated"
+    assert body["escalation_reason"] == "E2"
 
 
 # --- 주문번호 추출 helper -----------------------------------------------------

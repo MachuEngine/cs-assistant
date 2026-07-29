@@ -15,6 +15,23 @@ services:
       # 컨테이너 시작 시 멱등하게 만든다) — 볼륨으로 재시작 간 유지한다.
       - shop_data:/app/data/synthetic
       - chroma_data:/app/chroma_db
+    depends_on:
+      - slack-mcp
+
+  # Phase 11 — Slack 에스컬레이션 알림 MCP 서버(MCP_INTEGRATION.md 8.2절,
+  # zencoderai/slack-mcp 실측값). MCP_NOTIFIER=noop(기본값)이면 app이 이
+  # 서비스를 전혀 호출하지 않는다.
+  slack-mcp:
+    image: zencoderai/slack-mcp:latest
+    command: ["--transport", "http"]  # 없으면 stdio로 떠서 HTTP 호출 불가(실측)
+    environment:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_TEAM_ID: ${SLACK_TEAM_ID}
+      AUTH_TOKEN: ${SLACK_MCP_TOKEN}  # 고정하지 않으면 기동마다 UUID 자동 생성(실측)
+    # [엄수] ports를 열지 않는다 — 이 서버는 앞단 인증이 있긴 하지만(AUTH_TOKEN)
+    # 도커 내부 네트워크에서만 접근 가능해야 한다(2중 방어, MCP_INTEGRATION.md 2절).
+    expose:
+      - "3000"
 
   frontend:
     build: ./frontend
