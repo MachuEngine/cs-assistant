@@ -65,28 +65,35 @@
 
 ### 시스템 구성도
 
+**요청 흐름** — 실선이 주 경로, 점선이 부가 경로입니다.
+
 ```mermaid
 flowchart LR
-    B["🌐 브라우저"] --> N["Next.js<br/>(상담원 검토 UI)"]
-    N -->|"API 키 인증<br/>SSE 프록시"| F["FastAPI<br/>/triage · /reply · /reply/stream"]
+    B["🌐<br/>브라우저"] --> N["Next.js<br/>검토 UI"]
+    N -->|"API 키 인증 · SSE"| G["🔒 mask_pii()"]
+    G --> T["① Triage<br/>인텐트 · confidence"]
+    T -->|"confidence ≥ 임계값"| R["② Reply Agent<br/>LangGraph ReAct"]
+    R --> OK["✅ auto_draft<br/>초안 + 인용 조항"]
 
-    F --> M["🔒 mask_pii()<br/>(모델 호출 전)"]
-    M --> T["① Triage<br/>단일 호출"]
-    M --> R["② Reply Agent<br/>LangGraph ReAct"]
+    T -.->|"E1"| ESC["🔔 escalated<br/>초안 없음 + 사유"]
+    R -.->|"E5~E8"| ESC
+    ESC -.->|"fail-soft"| SL["Slack<br/>(MCP)"]
 
-    T --> GEN["생성 LLM<br/>claude-sonnet-5"]
-    R --> GEN
-    R --> CH[("ChromaDB<br/>정책 조항")]
-    R --> DB[("SQLite<br/>주문·고객")]
-    R --> JU["🎯 Judge LLM<br/>gpt-5.6-luna"]
-
-    F -.->|"escalated 시<br/>fail-soft"| MCP["MCP Client"]
-    MCP -.-> SL["Slack"]
-
-    style JU fill:#412991,color:#fff
-    style GEN fill:#D4A27F,color:#000
-    style M fill:#c0392b,color:#fff
+    classDef guard fill:#c0392b,stroke:#7b241c,color:#fff
+    classDef good  fill:#27ae60,stroke:#1e8449,color:#fff
+    classDef esc   fill:#e67e22,stroke:#ba6318,color:#fff
+    class G guard
+    class OK good
+    class ESC,SL esc
 ```
+
+**모듈이 사용하는 자원**
+
+| | 생성 LLM<br/>`claude-sonnet-5` | 🎯 Judge LLM<br/>`gpt-5.6-luna` | ChromaDB<br/>정책 조항 30 | SQLite<br/>주문 · 고객 |
+|---|:---:|:---:|:---:|:---:|
+| **① Triage** | ✅ | — | — | — |
+| **② Reply Agent** | ✅ | ✅ | ✅ | ✅ |
+| 벤더 / 위치 | Anthropic | **OpenAI** | 로컬 CPU | 로컬 |
 
 > 🎯 **Judge LLM은 생성 LLM과 다른 벤더**입니다 — 초안을 쓰는 모델이 자기 글을 자기가 채점하지 않도록 의도적으로 분리했습니다(배경은 [설계 원칙](#2-judge는-도구가-아니라-별도-노드이며-생성과-다른-벤더를-쓴다) 참고).
 
@@ -127,24 +134,28 @@ Bitext 데이터셋이 **영어 전용**이기 때문입니다. 인텐트 라벨
 ### 답변 초안 모듈 — LangGraph 상태 흐름
 
 ```mermaid
-flowchart TD
-    S([START]) --> PRE{"pre-agent 체크<br/>E1~E4"}
-    PRE -->|해당| ESC["🔔 escalated<br/>(초안 없음 + 사유)"]
-    PRE -->|해당 없음| P["plan"]
-    P --> A["agent<br/>(ReAct + 도구 8종)"]
-    A --> J["judge<br/>🎯 별도 벤더 LLM"]
-    J --> V{"validate (코드)<br/>policy≥4 AND tone≥4<br/>AND high severity 0"}
-    V -->|통과| OK(["✅ auto_draft"])
-    V -->|"미달 · budget > 0"| A
-    V -->|"미달 · budget = 0 (E8)"| ESC
-    A -->|"escalate_to_human (E5)"| ESC
-    A -->|"주문 조회 실패 (E6)"| ESC
-    A -->|"게이트 3연속 실패 (E7)"| ESC
+flowchart LR
+    S(["티켓 +<br/>분류 결과"]) --> PRE{"pre-agent<br/>게이트"}
+    PRE -->|"조건 미해당"| P["plan"]
+    P --> A["agent<br/>ReAct · 도구 8종"]
+    A --> J["judge<br/>🎯 별도 벤더"]
+    J --> V{"validate<br/>코드가 판정"}
+    V -->|"통과"| OK(["✅ auto_draft<br/>초안 + 인용 조항"])
+    V -->|"미달 · 예산 남음 (재시도)"| A
 
-    style J fill:#412991,color:#fff
-    style ESC fill:#e67e22,color:#fff
-    style OK fill:#27ae60,color:#fff
+    PRE -.->|"E1~E4"| ESC(["🔔 escalated<br/>초안 없음 + 사유"])
+    A   -.->|"E5~E7"| ESC
+    V   -.->|"E8"| ESC
+
+    classDef jud  fill:#412991,stroke:#2d1c66,color:#fff
+    classDef esc  fill:#e67e22,stroke:#ba6318,color:#fff
+    classDef good fill:#27ae60,stroke:#1e8449,color:#fff
+    class J jud
+    class ESC esc
+    class OK good
 ```
+
+실선은 정상 진행·재시도, **점선은 에스컬레이션**(초안 생성 중단)입니다. E1~E8의 내용은 [바로 아래 표](#세-가지-종료-상태)에 있습니다.
 
 **노드 순서(`plan → agent → judge → validate`)는 설계 승인 없이 바꾸지 않습니다.** `judge`는 **도구가 아니라 그래프 노드**이며, 오프라인 eval과 **동일한 함수**(`app/modules/reply/judge.py:judge_reply()`)를 호출합니다 — 그래야 EVAL.md의 Judge 신뢰도 수치가 곧 배포된 Judge의 신뢰도입니다.
 
@@ -342,19 +353,36 @@ CS 도메인에는 교육 도메인에 없던 문제가 하나 있습니다 — 
 - **위반 검출 recall 0.85 미달은 골든셋을 고치지 않고 보고했습니다.** 놓친 3건을 확인하니 Judge는 세 건 모두에서 high-severity 위반을 **실제로 잡아냈고**, 다만 `unsupported_commitment`가 아니라 `missing_citation`으로 분류했습니다. 세 건 다 근거 자체가 비어 있어 두 라벨이 사실상 같은 지적이 되는 케이스 — **Judge 실패가 아니라 골든셋의 유형 경계 문제**로 보이며, 유형 통합 여부는 사람 판단으로 남겼습니다.
 - **FP율 0.8은 표본 노이즈로 판단.** n=5에서 4건인데, 그중 ESC-026을 단독 재실행하니 `policy=5, tone=5, auto_draft`로 정상 통과했습니다. DESIGN.md가 이 지표를 참고값으로 둔 이유가 이것입니다.
 
+### 에이전트가 도구를 제대로 쓰는가 — 실행 로그 사후 검증
+
+위 지표들과 별개로, **에이전트가 실제로 RAG·DB 도구를 호출하고 그 결과만 인용하는지**를 `tone_golden`에 저장된 `tool_results_log`(실제 파이프라인 실행분 30건)로 사후 검증했습니다.
+
+| 검증 항목 | 결과 | |
+|---|---|---|
+| 정책 인용 **필수** 인텐트에서 `search_policy` 호출 | **18 / 18** | ✅ |
+| `search_policy` 미호출 2건 | 둘 다 `track_order` — **인용 불필요 인텐트** | ✅ |
+| `lookup_order` **필수**인데 미호출 | **0건** | ✅ |
+| 도구 결과가 아예 빈 실행 | **0건** | ✅ |
+| 초안의 대괄호 인용 60건 중 **검색 결과에 없는 조항** | **0건** | ✅ |
+
+즉 에이전트가 인텐트에 맞게 도구를 선택하고, **검색해온 조항만 인용**하고 있습니다(지어낸 조항 ID 0건). 이 사후 검증이 가능한 이유는 조항 **본문**이 `tool_results_log`에 남기 때문인데, 이 필드는 원래 게이트②용이었고 Judge에 전달되지 않던 것을 [버그 수정](#엔지니어링-하이라이트) 때 배선한 것입니다.
+
+> ⚠️ 다만 이건 "도구를 **호출**했는가"이지 "**옳은 질의**로 불렀는가"가 아닙니다 — 후자는 아직 측정 수단이 없습니다([미측정 지표](#미측정-지표-알려진-공백)).
+
 ### 티켓 분류 · PII · 검색 (로컬 Ollama `qwen2.5:14b`, 2026-07-28)
 
 | 지표 | n | 기준 | 실측 | |
 |---|---|---|---|---|
 | PII 마스킹 누락률 (FN) | 20 | = 0 | **0.000** | ✅ |
-| 정책 RAG Recall@5 | 20 | ≥ 0.80 | **1.000** | ✅ |
-| 정책 RAG MRR | 20 | 참고값 | 0.896 | |
+| 정책 RAG Recall@5 <sup>†</sup> | 20 | ≥ 0.80 | **1.000** | ✅ |
+| 정책 RAG MRR <sup>†</sup> | 20 | 참고값 | 0.896 | |
 | 인텐트 정확도 (27-class) | 20 | ≥ 0.85 | **0.850** | ✅ |
 | 인텐트 macro-F1 | 20 | ≥ 0.80 | **0.821** | ✅ |
 | 카테고리 정확도 (11-class) | 20 | ≥ 0.92 | 0.900 | ⚠️ |
 | confidence 캘리브레이션 | 20 | 오분류가 더 낮은가 | 0.847 vs 0.800 | ✅ |
 
-- PII 마스킹은 규칙 기반이라 모델과 무관하게 안정적입니다. 검색 수치도 LLM과 무관한 BGE-M3 + reranker 성능입니다.
+- PII 마스킹은 규칙 기반이라 모델과 무관하게 안정적입니다.
+- <sup>†</sup> **검색 수치는 LLM과 무관한 BGE-M3 + reranker 순수 성능입니다.** `run_retrieval.py`는 에이전트·`search_policy` 도구를 우회해 `get_retriever()`를 직접 호출하고, 질의도 골든셋에 사람이 써둔 이상적 질의를 씁니다(런타임은 모델이 질의를 만들고 `top_k=3`, eval은 `top_k=5`). **에이전트 검색 성능으로 읽으면 안 됩니다.**
 - **카테고리 정확도 미달(0.900 vs 0.92)은 20건 중 2건 오분류**라 표본 노이즈일 가능성이 커, 이 시점에 `app/`을 고치지 않았습니다 — `--full`(200건) 재확인 필요.
 - macro-F1을 함께 보는 이유는 불균형 보정이 아니라(Bitext는 인텐트당 ~1,000건으로 균등) **인접 인텐트 쌍의 국소 붕괴 탐지**입니다. 실제로 `change_shipping_address ↔ set_up_shipping_address` 혼동 1건이 관측됐고, 이는 DESIGN.md가 예상한 패턴과 일치합니다.
 
@@ -362,6 +390,7 @@ CS 도메인에는 교육 도메인에 없던 문제가 하나 있습니다 — 
 
 | 지표 | 왜 아직 못 쟀는가 |
 |---|---|
+| **에이전트가 생성한 질의의 검색 품질** | `run_retrieval.py`는 `get_retriever()`를 **직접** 호출하며 질의도 골든셋에 사람이 손으로 써둔 것(`"Can I cancel an order that has already shipped?"`)을 씁니다. 즉 재는 대상은 "질의가 이상적일 때 임베딩+리랭커가 옳은 조항을 올리는가"이지, **런타임에 모델이 스스로 만든 질의의 품질이 아닙니다.** 게다가 런타임 `search_policy`는 `top_k=3`, eval은 `top_k=5`라 조건도 다릅니다 — `recall@5=1.0`을 에이전트 성능으로 읽으면 안 됩니다 |
 | 톤 평균 ≥ 4.0 | `tone_golden`은 κ 측정용으로 선별된 40건이라 "실제 배치의 평균"을 대표하지 못함 — `--full` 단계에서 더 큰 배치로 별도 측정 필요 |
 | 정책 위반 검출 F1 | `policy_violation_golden`에 위반이 **있는** 양성 예시만 있고 대조군(clean draft)이 없어 precision 계산 불가. Recall만 측정 가능 |
 | PII FP율 | 비-PII를 잘못 마스킹하는 케이스의 골든 데이터가 아직 없음 |
@@ -451,13 +480,26 @@ pytest tests/ -x -q                                    # 140개, 모델 호출 �
 
 ```mermaid
 flowchart LR
-    B["🌐 브라우저"] -->|HTTPS| CA["Caddy<br/>(자동 TLS)"]
-    CA --> FE["frontend<br/>:3000"]
-    FE -->|"내부 네트워크"| AP["app (FastAPI)<br/>:8000"]
-    AP --> CH[("ChromaDB<br/>볼륨")]
-    AP --> SM["slack-mcp<br/>:3000 (expose only)"]
-    AP -.-> EXT["Anthropic · OpenAI API"]
+    B["🌐 브라우저"] -->|"HTTPS"| CA["Caddy<br/>자동 TLS"]
+
+    subgraph compose["docker compose — 내부 네트워크"]
+        direction TB
+        FE["frontend<br/>:3000"]
+        AP["app · FastAPI<br/>:8000"]
+        SM["slack-mcp<br/>expose only"]
+        VOL[("ChromaDB<br/>볼륨")]
+
+        FE --> AP
+        AP --> VOL
+        AP --> SM
+    end
+
+    CA --> FE
+    AP -.->|"API 호출"| EXT["Anthropic<br/>OpenAI"]
     SM -.-> SL["Slack"]
+
+    classDef pub fill:#175F8C,stroke:#0f4363,color:#fff
+    class CA pub
 ```
 
 ```bash
