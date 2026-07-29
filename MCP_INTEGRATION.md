@@ -43,7 +43,7 @@ outcome이 `escalated`로 나온 뒤 **실제로 사람을 부르는 경로가 �
 | 언어/SDK | Go | TypeScript, MCP SDK **v1.13.2** | Node/TS (버전 미명시) |
 | 전송 | Stdio·SSE·HTTP | Stdio·**Streamable HTTP** | Stdio·**Streamable HTTP** |
 | Slack 인증 | `xoxb`/`xoxp`/**`xoxc`+`xoxd`(세션)** | **`xoxb` 전용** | `xoxb`+`xoxp` **둘 다 필수** |
-| 서버 앞단 인증 | ✅ `SLACK_MCP_API_KEY`(Bearer) | 명시 없음 | 명시 없음 |
+| 서버 앞단 인증 | ✅ `SLACK_MCP_API_KEY`(Bearer) | ✅ `AUTH_TOKEN`(**미설정 시 자동 생성·강제**, 실측) | 명시 없음 |
 | Docker | Dockerfile만 | ✅ **Docker Hub 이미지** | Dockerfile만 |
 | 발송 도구명 | `conversations_add_message` | `slack_post_message` | `slack_post_message` |
 | 인자 | (도구별 상이) | `channel_id`, `text` | 미명시 |
@@ -57,25 +57,38 @@ outcome이 `escalated`로 나온 뒤 **실제로 사람을 부르는 경로가 �
 - Streamable HTTP 지원 — 우리 FastAPI에서 호출하려면 필수(stdio는 로컬 데스크톱 클라이언트용)
 - **SDK 버전이 명시돼 있다**(v1.13.2 = 구 스펙 v1 라인) → 우리 클라이언트 핀과 세대가 맞는다
 
-**알려진 약점**: 서버 앞단 인증이 문서에 없다 → **도커 내부 네트워크에만 노출하고 호스트
-포트를 열지 않는다.** korotovsky의 유일한 우위가 이 부분이므로, 외부 노출이 필요해지면
-재검토한다.
+**앞단 인증**: 문서엔 없었지만 실측 결과 `AUTH_TOKEN`이 있고, **미설정 시 컨테이너가 UUID를
+자동 생성해 강제**한다(기동 로그에 출력). 값을 명시적으로 고정해야 재기동 때마다 바뀌지 않는다.
+그래도 도커 내부 네트워크에만 노출하고 호스트 포트는 열지 않는다(2중 방어).
 
-### 프로토콜 세대: 구 스펙(stateful)으로 간다
+### 프로토콜 세대: 구 스펙(stateful)으로 확정 — 실측
 
-zencoderai가 MCP SDK **v1.13.2**를 쓴다 — 2026-07-28 stateless 이전 세대다. 따라서 우리
-클라이언트도 **v1 라인(`mcp>=1.28,<2`)** 으로 맞춘다. 신 스펙이 최소 12개월 유예를 두므로
-당장 강제 마이그레이션되지 않는다.
+**2026-07-29 실제 컨테이너로 확인했다**(`zencoderai/slack-mcp:latest`, digest `sha256:d47ca0d…`):
+
+```
+initialize 응답 → protocolVersion: "2025-03-26"
+응답 헤더       → mcp-session-id: ef6caa3e-…      ← 세션 발급 = stateful
+기동 로그       → "Streamable HTTP transport on port 3000"
+```
+
+2026-07-28 stateless가 아니라 **2025-03-26 세대**다. 따라서 우리 클라이언트도
+**v1 라인(`mcp>=1.28,<2`)** 으로 맞춘다. 신 스펙이 최소 12개월 유예를 두므로 당장 강제
+마이그레이션되지 않는다.
 
 > **stateless 전환은 "나중에 서버가 따라오면"의 문제다.** 그때 `client.py` 한 파일만
 > 교체하면 되도록 SDK를 직접 노출하지 않고 감싼다(3.2절).
 
-### 남은 미검증 항목
+### 실측 검증 현황 (2026-07-29)
 
-| 항목 | 처리 |
+| 항목 | 결과 |
 |---|---|
-| 실제 워크스페이스 발송 | 봇 토큰·워크스페이스가 있어야 하므로 **사람이 확인**(RunPod e2e와 동일 처리) |
-| 도구 인자 스키마 정확한 형태 | 코드가 `tools/list`로 런타임에 읽으므로 사전 확정 불필요(4.3절) |
+| 컨테이너 기동 · HTTP 전송 | ✅ 확인 |
+| `initialize` 핸드셰이크 · 세션 발급 | ✅ 확인 (`2025-03-26`, `mcp-session-id`) |
+| `tools/list` 도구 8개 · 스키마 | ✅ 확인 |
+| 도구 자동 발견 알고리즘 | ✅ 실제 스키마로 검증 — 단, 필수 인자 필터 필요성 발견(4.3절) |
+| `tools/call` 실제 Slack 발송 | ⚠️ **`not_in_channel`로 실패** — 스코프 문제, 8.1절에 원인·해결 기록 |
+
+봇 스코프를 고친 뒤 발송 재확인은 **사람이 진행**한다(RunPod e2e와 동일 처리).
 
 → **폴백**: MCP 경로가 막히면 동일한 `EscalationNotifier` 인터페이스 뒤에서 Slack Web API
 (`chat.postMessage`)를 직접 호출한다. 상위 코드는 무변경 — 3절 추상화의 실질적 이유 중 하나다.
@@ -256,8 +269,26 @@ MCP가 존재하는 이유가 "클라이언트가 서버 도구를 사전 지식
 2. 아니면 **스키마 모양으로 후보를 거른다** — `inputSchema.properties`에 채널류 키
    (`channel_id`/`channel`/`conversation_id`…)와 텍스트류 키(`text`/`message`/`content`…)가
    둘 다 있는 도구. 이름보다 스키마가 신뢰도 높다.
-3. 후보가 여럿이면 이름 힌트로 순위(`post`+`message` > `send`+`message` > …).
-4. 후보가 없으면 → 명확한 에러 + 사용 가능한 도구 목록을 로그에 남긴다.
+3. **`required` 인자를 전부 채울 수 있는 도구만 남긴다**(아래 실측 근거).
+4. 그래도 여럿이면 이름 힌트로 순위(`post`+`message` > `send`+`message` > …).
+5. 후보가 없으면 → 명확한 에러 + 사용 가능한 도구 목록을 로그에 남긴다.
+
+> **3번이 왜 필요한지 — 실측(2026-07-29).** 대상 서버의 도구 8개를 `tools/list`로 뽑아
+> 스키마 필터(2번)를 적용하면 후보가 **2개** 나온다:
+>
+> | 도구 | 인자 | 필수 | 채울 수 있나 |
+> |---|---|---|---|
+> | `slack_post_message` | `channel_id`, `text` | 둘 다 | ✅ |
+> | `slack_reply_to_thread` | `channel_id`, `thread_ts`, `text` | 셋 다 | ❌ `thread_ts` 없음 |
+>
+> 이번엔 이름 힌트(4번)가 `slack_post_message`를 먼저 골라 우연히 맞지만, **이름이 다른
+> 서버에서는 스레드 답장 도구가 선택돼 `thread_ts` 누락으로 실패**할 수 있다. 필수 인자
+> 충족 여부를 순위보다 먼저 거르는 게 안전하다.
+
+**실측된 도구 목록**(`zencoderai/slack-mcp:latest`, 참고용 — 코드는 런타임에 읽는다):
+`slack_post_message` · `slack_reply_to_thread` · `slack_list_channels` ·
+`slack_add_reaction` · `slack_get_channel_history` · `slack_get_thread_replies` ·
+`slack_get_users` · `slack_get_user_profile`
 
 > **스키마 필터를 1차로 두는 게 왜 중요한지 — 실제 사례.** 조사한 3개 서버 중
 > `korotovsky`의 발송 도구명은 `conversations_add_message`다. 이름 힌트(`post`+`message`,
@@ -390,39 +421,59 @@ settings:
 ```
 
 - `chat:write` — 필수(메시지 발송)
-- `chat:write.public` — **공개 채널에 봇 초대 없이** 쓸 수 있게 한다. 없으면 봇을 채널에
-  초대해야 하고, 안 하면 토큰이 맞아도 `not_in_channel`로 실패한다(흔한 함정).
-  비공개 채널을 쓸 거면 이 스코프로도 안 되고 초대가 필요하다
+- `chat:write.public` — **공개 채널에 봇 초대 없이** 쓸 수 있게 한다
 - Install to Workspace → **`xoxb-`로 시작하는 Bot User OAuth Token** 확보
 - 알림 채널의 **채널 ID**(`C0XXXXXXX`) 확보 — 채널명보다 ID가 안전하다
+- **워크스페이스 ID**(`T…`)도 필요하다 — MCP 서버가 `SLACK_TEAM_ID`로 요구한다.
+  `curl -H "Authorization: Bearer xoxb-…" https://slack.com/api/auth.test` 의 `team_id`
+
+> ⚠️ **`not_in_channel` — 실제로 밟은 함정(2026-07-29).** 테스트 발송이 이 에러로 실패했고,
+> 원인은 토큰에 부여된 스코프가 `channels:history, chat:write`뿐이라 `chat:write.public`이
+> 빠진 것이었다. 확인 방법은 Slack API 응답 헤더의 `x-oauth-scopes`다:
+> ```
+> curl -s -D - -o /dev/null -H "Authorization: Bearer xoxb-…" \
+>   https://slack.com/api/auth.test | grep -i x-oauth-scopes
+> ```
+> **해결 2가지** — ① 채널에서 `/invite @봇이름`(재설치 불필요, 비공개 채널도 가능)
+> ② `chat:write.public` 스코프 추가 후 **Reinstall to Workspace**(공개 채널 전체에 적용).
+> manifest로 앱을 만들어도 **나중에 스코프를 바꾸면 재설치해야 반영된다.**
 
 ### 8.2 MCP 서버 컨테이너
 
 `xoxb-` 토큰은 **우리 `.env`가 아니라 MCP 서버 쪽**에 들어간다. 우리 앱은 Slack을 직접
 부르지 않는다.
 
+아래는 **실제 컨테이너를 띄워 검증한 값**이다(2026-07-29).
+
 ```yaml
 # docker-compose.yml 에 추가
   slack-mcp:
     image: zencoderai/slack-mcp:latest
+    command: ["--transport", "http"]      # 없으면 stdio로 떠서 HTTP 호출 불가
     environment:
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}   # xoxb-…
-    # [엄수] ports를 열지 않는다. 이 서버는 앞단 인증이 없어(2절)
-    # 도커 내부 네트워크에서만 접근 가능해야 한다.
+      SLACK_TEAM_ID: ${SLACK_TEAM_ID}       # T… (필수)
+      AUTH_TOKEN: ${SLACK_MCP_TOKEN}        # 고정하지 않으면 기동마다 UUID 자동 생성
+    # [엄수] ports를 열지 않는다 — 도커 내부 네트워크에서만 접근 가능해야 한다.
     expose:
       - "3000"
 ```
 
-> 정확한 환경변수명·포트·HTTP 전송 활성화 플래그는 **이미지 문서로 확인해야 한다.**
-> 위는 형태만 보인 것이고 실제 값은 다를 수 있다.
+**실측 확인 사항**
+- 엔드포인트는 루트가 아니라 **`/mcp`** 다 (`http://0.0.0.0:3000/mcp`)
+- `--transport http` 를 안 주면 stdio로 기동한다
+- `AUTH_TOKEN` 미설정 시 기동 로그에 자동 생성된 UUID를 출력하고 그걸 강제한다 →
+  재기동마다 값이 바뀌므로 **반드시 명시적으로 고정**한다
 
 ### 8.3 우리 앱 `.env`
 
 ```bash
 MCP_NOTIFIER=slack
-SLACK_MCP_URL=http://slack-mcp:3000     # 도커 내부 서비스명
-SLACK_MCP_TOKEN=                         # 서버 앞단 인증용(zencoderai는 없음 → 비움)
+SLACK_MCP_URL=http://slack-mcp:3000/mcp  # 엔드포인트 경로 /mcp 포함(실측)
+SLACK_MCP_TOKEN=                          # 서버 AUTH_TOKEN과 같은 값을 넣는다
 SLACK_ESCALATION_CHANNEL=C0XXXXXXX
-SLACK_MCP_TOOL_NAME=                     # 자동 발견 실패 시에만 지정
+SLACK_TEAM_ID=T0XXXXXXXXX                 # MCP 서버가 요구
+SLACK_BOT_TOKEN=xoxb-…                    # MCP 서버로 전달됨(우리 앱은 안 씀)
+SLACK_MCP_TOOL_NAME=                      # 자동 발견 실패 시에만 지정
 MCP_NOTIFY_TIMEOUT=5
 ```
