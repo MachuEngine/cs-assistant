@@ -31,24 +31,72 @@ DESIGN.md 6.1/6.2절이 단일 출처다.
 
 `category_accuracy` 미달은 `--sample 20`의 작은 표본(20건 중 2건 오분류) 영향일 가능성이 커, 이 시점에 `app/`을 고치지 않는다 — `--full`(200건) 실행 후 재확인 필요(사람이 직접 실행).
 
-## 보류: 로컬 라이브 실행이 오래 걸리는 4개 항목 (2026-07-29)
+## 실제 프론티어 모델(claude-sonnet-5 / gpt-5.6-luna)로 재실행 (2026-07-29)
 
-다음은 전부 `run_reply()`(멀티턴 에이전트 루프) 또는 `judge_reply()`를 실제로 호출해야 하는
-항목이라, 이 개발 환경(로컬 Ollama, 실제 벤더 키 없음)에서 스모크 20건조차 수십 분 이상
-걸릴 수 있다(특히 `run_escalation`의 E5/E7/E8 best-effort 케이스는 의도적으로 예산·턴을
-소진하도록 설계돼 있어 더 오래 걸림). 실행 자체가 실패한 건 아니다 — 처음엔 멈춘 것으로
-오판해 kill했으나, 같은 케이스를 pytest로 단독 실행하면 12초 만에 끝나는 것을 확인해
-파이프라인 자체는 정상임을 검증했다(자세한 경위는 `.claude/agent-memory/dev/MEMORY.md`).
+실 API 키가 준비되어 앞서 보류했던 4개 항목을 진행했다. 이 과정에서 **Phase 6부터 있었던
+심각한 버그를 발견해 수정**했다 — 아래 "발견한 버그" 참고. 버그 수정 전 1차 시도에서는
+`tone_golden` 후보 생성이 60건 중 1건만 `auto_draft`(59건 escalated)로 끝나 즉시 이상 신호로
+보고 중단·조사했다.
 
-- `scripts/build_golden_tone_candidates.py` (tone_golden 후보 생성)
-- `evals/runners/run_escalation.py --sample 20`
-- `evals/runners/run_policy_violation.py --sample 20`
-- `evals/runners/run_judge_reliability.py` (위 tone_golden 후보 생성에 종속)
+### 발견한 버그: Judge가 정책 조항 본문을 받은 적이 없었다
 
-**사용자 결정**: 실제 프론티어 모델(생성 `claude-sonnet-5` / Judge `gpt-5.6-luna`) API 키가
-준비되면 그때 이 4개를 실행한다. 모델 비교를 하게 되면 오픈소스(Ollama) 모델도 비교
-대상으로 함께 돌려본다. Phase 8(RunPod 어댑터)·9(UI)·10(배포)는 이 4개 항목에 구조적으로
-의존하지 않음을 PROMPTS.md 기준으로 확인함 — 다음 Phase 진행에 지장 없음.
+`judge.py:judge_reply()`에는 `cited_policies`(조항 ID 문자열 리스트, 예: `["TIER-02"]`)만
+전달되고 있었고, `search_policy()`가 실제로 검색한 조항 **본문**은 한 번도 Judge에게
+전달되지 않았다. 그런데 `judge_reply.md` 루브릭은 "인용된 정책 조항과 도구 결과가
+**실제로 보여준 것**과 부합하는가"를 채점하라고 하므로, Judge는 애초에 검증할 근거를
+받은 적이 없이 채점해온 것이다. 로컬 Ollama Judge에서는 이 결함이 상대적으로 안
+드러났을 뿐, 처음부터 있던 버그였다 — 실제로 더 꼼꼼한 gpt-5.6-luna로 바꾸자마자
+거의 모든 초안이 "근거 제공 안 됨"으로 `policy_compliance=1`을 받아 E8로 이어졌다.
+
+**수정**: `judge_reply()`에 `tool_results_log`(세션 중 실제로 조회된 텍스트 — 게이트②가
+이미 쓰는 것과 동일한 로그) 파라미터를 추가하고, `graph.py:judge_node`가 이를 넘기도록
+배선. `judge_reply.md`에도 `retrieved_context`만이 유일한 증거이고 `cited_policies`는
+그 자체로 증거가 아니라는 점, 그리고 상담원 책임 고지 문구를 톤 감점 대상으로 삼지 말라는
+점을 명시(disclaimer가 `inappropriate_tone`으로 오분류되는 것도 같은 추적에서 함께 발견함).
+`evals/runners/run_policy_violation.py`·`run_judge_reliability.py`도 시그니처에 맞춰 갱신.
+
+수정 검증: 동일 티켓(`create_account`, TCK-010865)을 재추적해 `policy_compliance`가
+`retrieved_context`에 실제로 근거해 채점되는 것을 확인. `tone_golden` 재생성 시 57회
+시도 중 30건 `auto_draft`(약 53%)로 정상화(수정 전 1/60).
+
+> **부수 관찰**: `create_account`처럼 정책 인용이 필수가 아닌 인텐트(`routing.py`의
+> `SEARCH_POLICY_REQUIRED`에 없음)에서도 Judge가 "가입에 필요한 정보 목록" 같은 일반
+> 정보까지 근거를 요구하는 경향이 보였다. 버그는 아니고 판단 기준 조정 문제로 보이며,
+> 이 프로젝트 철학(초안 없음 > 잘못된 초안)상 안전한 방향의 엄격함이라 지금은 조정하지
+> 않고 기록만 남긴다.
+
+### 재실행 결과
+
+| 러너 | 지표 | 값 | 기준 | 판정/메모 |
+|---|---|---|---|---|
+| `scripts/build_golden_tone_candidates.py` | 후보 수집 | 30/30 (57회 시도) | — | `evals/golden/tone_golden.jsonl` 생성 완료, `human_tone_score`는 전부 `null`(사람 라벨링 대기) |
+| `run_escalation --sample 20` | precheck_accuracy(E1-E4) | 1.0 | — | PASS |
+| `run_escalation --sample 20` | e6_recall | 1.0 | — | PASS |
+| `run_escalation --sample 20` | 결정론적 escalation recall(E1-E4+E6) | 1.0 | ≥0.90 | PASS |
+| `run_escalation --sample 20` | control_fp_rate | 0.8 (4/5) | 참고값 | **표본 노이즈로 판단** — ESC-026을 단독 재실행하니 `policy_compliance=5, tone=5, auto_draft`로 정상 통과. n=5라 LLM 샘플링 변동이 그대로 드러남(DESIGN.md가 이 지표를 참고값으로 둔 이유) |
+| `run_escalation --sample 20` | best_effort_recall(E5/E7/E8) | 0.7 | 참고값 | 의도적으로 어려운 케이스, 정상 범위 |
+| `run_policy_violation --sample 20` | gate_recall(②/④) | 1.0 | — | PASS(결정론적) |
+| `run_policy_violation --sample 20` | judge_overall_recall | 0.85 | ≥0.95 | **FAIL — 골든셋에 근거와 함께 보고, 수정 안 함** 아래 참고 |
+| `run_judge_reliability --sample 20` | — | "라벨 부족" | — | 예상된 정상 종료. 사람이 30건 라벨링해야 κ 측정 가능 |
+
+**`judge_overall_recall=0.85` 미달 관련 — golden 수정 안 하고 보고**: 놓친 3건
+(PV-003·006·008, 전부 금액형 `unsupported_commitment`)을 확인한 결과, Judge는 세 건
+모두에서 실제로 high-severity 위반을 잡아냈다 — 다만 `unsupported_commitment`가 아니라
+`missing_citation`으로 분류했다. 세 건 다 `tool_results_log`가 완전히 비어 있어(근거
+자체가 없는 케이스), Judge 입장에서는 "확약이 뒷받침 안 됨"과 "인용 근거 없음"이
+사실상 같은 지적이라 라벨 선택이 갈린 것으로 보인다. **Judge가 문제를 놓친 게 아니라
+골든셋의 유형 경계(무근거 확약 vs 인용 누락)가 애매한 사례일 가능성** — 골든셋은
+수정하지 않았고, 유형 라벨을 더 관대하게 채점할지(예: 두 유형을 근거-없음 상위
+카테고리로 묶어 채점) 여부는 사람 판단이 필요.
+
+### 여전히 보류 중
+
+- **`tone_golden.jsonl`의 `human_tone_score` 라벨링** — API 키와 무관, 사람이 직접
+  30건에 1~5점을 매겨야 `run_judge_reliability`의 κ 측정이 가능하다.
+- **RunPod 실제 엔드포인트 e2e**(`VENDOR_INTEGRATION.md`) — `RUNPOD_API_KEY`/
+  `RUNPOD_ENDPOINT_ID` 여전히 미설정.
+- **클라우드 VM 배포·DNS·TLS·billing alarm**(`HARNESS_ENGINEERING.md` 5절) — 실제
+  클라우드 계정 필요, API 키와 무관.
 
 ## 미측정 지표 (알려진 공백)
 
