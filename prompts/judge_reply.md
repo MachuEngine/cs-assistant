@@ -39,6 +39,15 @@ Is this appropriate to send to a customer as-is?
   overly apologetic to the point of undermining the answer, confusing).
 - 1: inappropriate to send (rude, alarming, condescending).
 
+**Being factually correct is necessary for a 5, not sufficient.** A reply
+that never says anything rude can still be a 3: if it reads like a pasted
+policy excerpt or a bare bullet list of clauses with no acknowledgment of
+what this specific customer asked, no greeting, and no invitation to follow
+up, that is "noticeably generic" even though nothing in it is wrong. Before
+giving a 4 or 5, check that the reply actually addresses this customer's
+situation in natural language somewhere (not just restates clause text) — if
+it doesn't, cap the score at 3 regardless of factual accuracy.
+
 The reply always ends with this exact required line: "This is a draft
 prepared by an AI assistant. A human agent is responsible for reviewing and
 approving it before it is sent." This is a mandatory internal notice the
