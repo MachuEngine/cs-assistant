@@ -19,16 +19,18 @@ _ROLE_MAP = {"system": SystemMessage, "user": HumanMessage, "assistant": AIMessa
 
 def get_chat_anthropic(
     model: str | None = None,
-    temperature: float = 0.7,
     max_tokens: int = 2048,
 ) -> ChatAnthropic:
+    # temperature를 안 보낸다 — claude-sonnet-5(그 외 adaptive thinking을 쓰는
+    # 최신 모델군)는 이 파라미터를 보내면 400 "temperature is deprecated for
+    # this model"로 거부한다(2026-07-29 실측, 실제 API 호출로 확인). 과거
+    # 모델은 온도 조절이 유효했지만 지금 기본 모델에서는 아예 안 통한다.
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
     return ChatAnthropic(
         model=model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5"),
         api_key=api_key,
-        temperature=temperature,
         max_tokens=max_tokens,
     )
 
@@ -40,7 +42,6 @@ class AnthropicJudgeBackend(LLMBackend):
     async def generate(self, messages: list[dict], **kwargs) -> str:
         chat = get_chat_anthropic(
             model=self.model,
-            temperature=kwargs.get("temperature", 0.7),
             max_tokens=kwargs.get("max_tokens", 2048),
         )
         lc_messages = [_ROLE_MAP.get(m["role"], HumanMessage)(content=m["content"]) for m in messages]
