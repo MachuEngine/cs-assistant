@@ -4,19 +4,19 @@
       {
         "matcher": "Write|Edit|Bash",
         "hooks": [
-          { "type": "command", "command": "python3 .claude/hooks/block_secrets.py" }
+          { "type": "command", "command": "python3 /Users/jongmin/Project/cs-assistant/.claude/hooks/block_secrets.py" }
         ]
       },
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "python3 .claude/hooks/block_protected_paths.py" }
+          { "type": "command", "command": "python3 /Users/jongmin/Project/cs-assistant/.claude/hooks/block_protected_paths.py" }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "python3 .claude/hooks/guard_eval_cost.py" }
+          { "type": "command", "command": "python3 /Users/jongmin/Project/cs-assistant/.claude/hooks/guard_eval_cost.py" }
         ]
       }
     ],
@@ -24,7 +24,7 @@
       {
         "matcher": "Write|Edit|Bash",
         "hooks": [
-          { "type": "command", "command": "python3 .claude/hooks/log_tool_calls.py" }
+          { "type": "command", "command": "python3 /Users/jongmin/Project/cs-assistant/.claude/hooks/log_tool_calls.py" }
         ]
       }
     ]
