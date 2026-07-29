@@ -60,7 +60,10 @@ async def main() -> None:
     misses = []
 
     for i, row in enumerate(sample, start=1):
-        judge_result = await judge_reply(row["ticket_text"], row["draft_text"], [], llm)
+        judge_result = await judge_reply(
+            row["ticket_text"], row["draft_text"], [], llm,
+            tool_results_log=row.get("tool_results_log", []),
+        )
         found_types = {v.get("type") for v in judge_result.get("violations", [])}
         hit = row["violation_type"] in found_types
 

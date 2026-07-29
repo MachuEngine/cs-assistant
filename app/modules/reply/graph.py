@@ -205,11 +205,13 @@ async def judge_node(state: ReplyState) -> dict:
     호출한다 — 검증-배포 불일치를 처음부터 만들지 않는다(DESIGN.md 3.4절).
     """
     llm = get_judge_backend()
+    ctx = get_ctx()
     result = await judge_reply(
         state["ticket"]["text"],
         state["draft"]["reply_text"],
         state["draft"]["cited_policies"],
         llm,
+        tool_results_log=ctx["tool_results_log"],
     )
     return {"judge_result": result}
 

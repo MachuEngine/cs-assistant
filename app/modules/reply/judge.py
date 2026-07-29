@@ -26,13 +26,26 @@ async def judge_reply(
     draft_text: str,
     cited_policies: list,
     llm: LLMBackend,
+    tool_results_log: list | None = None,
 ) -> dict:
-    """draft_text를 채점한다. llm은 get_judge_backend()가 반환한 LLMBackend."""
+    """draft_text를 채점한다. llm은 get_judge_backend()가 반환한 LLMBackend.
+
+    tool_results_log: 이번 세션에서 search_policy/lookup_order/
+    check_customer_tier가 실제로 반환한 텍스트(app.modules.reply.tools의
+    contextvars 세션에 누적됨, save_draft 게이트②가 참조하는 것과 동일한
+    로그). **이게 없으면 Judge는 "cited_policies" 조항 ID 문자열만 보고
+    실제 조항 본문은 한 번도 못 본 채 policy_compliance를 채점하게 된다**
+    (2026-07-29 실측 발견 — gpt-5.6-luna로 처음 실행했을 때 거의 모든
+    초안이 "인용된 조항의 본문·도구 결과가 제공되지 않아 검증 불가"로
+    policy_compliance=1을 받아 E8로 이어졌다. 로컬 Ollama Judge에서는
+    이 결함이 상대적으로 안 드러났을 뿐 처음부터 있던 버그다).
+    """
     content = json.dumps(
         {
             "ticket": ticket_text,
             "draft_reply": draft_text,
             "cited_policies": cited_policies,
+            "retrieved_context": tool_results_log or [],
         },
         ensure_ascii=False,
     )

@@ -30,6 +30,7 @@ os.environ.setdefault("OLLAMA_MODEL", "qwen2.5:14b")
 
 from app.common.privacy import mask_pii  # noqa: E402
 from app.modules.reply.graph import run_reply  # noqa: E402
+from app.modules.reply.tools import get_ctx  # noqa: E402
 
 TICKETS_PATH = pathlib.Path("data/synthetic/tickets.jsonl")
 OUTPUT_PATH = pathlib.Path("evals/golden/tone_golden.jsonl")
@@ -97,6 +98,10 @@ async def main() -> None:
 
         try:
             final_state = await run_reply(ticket, triage)
+            # run_reply()가 방금 이 태스크 컨텍스트에 bind_session()으로 세션을
+            # 새로 걸어뒀으므로, 반환 직후 get_ctx()는 이 티켓의 세션을 그대로
+            # 가리킨다(다음 반복의 run_reply()가 다시 bind하기 전까지 유효).
+            tool_results_log = list(get_ctx()["tool_results_log"])
         except Exception as e:
             print(f"[{i}/{len(candidates)}] {raw['ticket_id']} 실행 오류, 건너뜀: {e}")
             continue
@@ -112,6 +117,7 @@ async def main() -> None:
             "ticket_id": raw["ticket_id"],
             "ticket_text": ticket["text"],
             "draft_text": final_state["draft"]["reply_text"],
+            "tool_results_log": tool_results_log,
             "human_tone_score": None,
         })
 

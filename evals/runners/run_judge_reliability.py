@@ -73,7 +73,10 @@ async def main() -> None:
     human_scores, judge_scores = [], []
     rows_detail = []
     for i, row in enumerate(sample, start=1):
-        judge_result = await judge_reply(row["ticket_text"], row["draft_text"], [], llm)
+        judge_result = await judge_reply(
+            row["ticket_text"], row["draft_text"], [], llm,
+            tool_results_log=row.get("tool_results_log", []),
+        )
         judge_tone = judge_result["tone"]
         human_tone = row["human_tone_score"]
         human_scores.append(human_tone)
