@@ -136,16 +136,20 @@ Bitext 데이터셋이 **영어 전용**이기 때문입니다. 인텐트 라벨
 ```mermaid
 flowchart LR
     S(["티켓 +<br/>분류 결과"]) --> PRE{"pre-agent<br/>게이트"}
-    PRE -->|"조건 미해당"| P["plan"]
-    P --> A["agent<br/>ReAct · 도구 8종"]
-    A --> J["judge<br/>🎯 별도 벤더"]
-    J --> V{"validate<br/>코드가 판정"}
+
+    subgraph LOOP["ReAct 루프 — 예산 소진까지 재시도"]
+        direction LR
+        P["plan"] --> A["agent<br/>ReAct · 도구 8종"]
+        A --> J["judge<br/>🎯 별도 벤더"]
+        J --> V{"validate<br/>코드가 판정"}
+        V -.->|"미달"| A
+    end
+
+    PRE -->|"조건 미해당"| P
     V -->|"통과"| OK(["✅ auto_draft<br/>초안 + 인용 조항"])
-    V -->|"미달 · 예산 남음 (재시도)"| A
 
     PRE -.->|"E1~E4"| ESC(["🔔 escalated<br/>초안 없음 + 사유"])
-    A   -.->|"E5~E7"| ESC
-    V   -.->|"E8"| ESC
+    LOOP -.->|"E5~E8"| ESC
 
     classDef jud  fill:#412991,stroke:#2d1c66,color:#fff
     classDef esc  fill:#e67e22,stroke:#ba6318,color:#fff
@@ -155,7 +159,7 @@ flowchart LR
     class OK good
 ```
 
-실선은 정상 진행·재시도, **점선은 에스컬레이션**(초안 생성 중단)입니다. E1~E8의 내용은 [바로 아래 표](#세-가지-종료-상태)에 있습니다.
+실선은 정상 진행, **점선은 재시도·에스컬레이션**(초안 생성 중단)입니다. E1~E8의 내용은 [바로 아래 표](#세-가지-종료-상태)에 있습니다.
 
 **노드 순서(`plan → agent → judge → validate`)는 설계 승인 없이 바꾸지 않습니다.** `judge`는 **도구가 아니라 그래프 노드**이며, 오프라인 eval과 **동일한 함수**(`app/modules/reply/judge.py:judge_reply()`)를 호출합니다 — 그래야 EVAL.md의 Judge 신뢰도 수치가 곧 배포된 Judge의 신뢰도입니다.
 
@@ -481,26 +485,20 @@ pytest tests/ -x -q                                    # 140개, 모델 호출 �
 ```mermaid
 flowchart LR
     B["🌐 브라우저"] -->|"HTTPS"| CA["Caddy<br/>자동 TLS"]
-
-    subgraph compose["docker compose — 내부 네트워크"]
-        direction TB
-        FE["frontend<br/>:3000"]
-        AP["app · FastAPI<br/>:8000"]
-        SM["slack-mcp<br/>expose only"]
-        VOL[("ChromaDB<br/>볼륨")]
-
-        FE --> AP
-        AP --> VOL
-        AP --> SM
-    end
-
-    CA --> FE
+    CA --> FE["frontend<br/>:3000"]
+    FE -->|"내부 프록시"| AP["app · FastAPI<br/>:8000"]
+    AP --> VOL[("ChromaDB<br/>볼륨")]
+    AP --> SM["slack-mcp<br/>호스트 포트 없음"]
     AP -.->|"API 호출"| EXT["Anthropic<br/>OpenAI"]
     SM -.-> SL["Slack"]
 
+    classDef svc fill:#fff9c4,stroke:#b8a642,color:#000
     classDef pub fill:#175F8C,stroke:#0f4363,color:#fff
+    class FE,AP,SM,VOL svc
     class CA pub
 ```
+
+노란색이 `docker compose`가 띄우는 서비스입니다.
 
 ```bash
 docker compose up -d --build     # app + frontend + slack-mcp
