@@ -49,10 +49,11 @@
 | 티켓 분류 모듈 (단일 호출 + structured output) | ✅ 완료 |
 | 답변 초안 에이전트 (ReAct + judge 노드 + validate 노드) | ✅ 완료 |
 | **생성 ↔ Judge 벤더 완전 분리** (Anthropic ↔ OpenAI) | ✅ 완료 |
-| `save_draft` 결정론적 게이트 5종 | ✅ 완료 |
-| 에스컬레이션 E1~E8 (전부 코드가 판정) | ✅ 완료 |
+| `save_draft` 결정론적 게이트 6종 | ✅ 완료 |
+| 에스컬레이션 E1~E9 (전부 코드가 판정) | ✅ 완료 |
+| **라이브 공지 조회 (`check_live_notices`, Phase 12a)** | ✅ 코드 완료 (noop/stub) · ⏸️ 노션 어댑터 미결선(12b/12c) |
 | RAG (ChromaDB + BGE-M3 + BGE-reranker, 전부 CPU) | ✅ 완료 |
-| 평가 체계 (골든셋 6종 412건 + 러너 6종) | ✅ 완료 (스모크셋 기준) |
+| 평가 체계 (골든셋 7종 431건 + 러너 6종 + 초안 러너 1종) | ✅ 완료 (스모크셋 기준) |
 | **Judge 신뢰도 κ ≥ 0.4** | ✅ 달성 (0.466 — [품질 평가](#품질-평가)) |
 | 커스텀 어댑터 (RunPod `BaseChatModel` 상속) | ✅ 코드 완료 · ⏸️ 실 엔드포인트 미검증 |
 | 상담원 검토 UI (Next.js + SSE) | ✅ 완료 |
@@ -61,7 +62,7 @@
 | 배포 구성 (Docker + Compose + Caddy HTTPS) | ✅ 구성 완료 · ⏸️ 실 클라우드 VM 미배포 |
 | 전체 eval (`--full`) | ⬜ 미실행 ([남은 과제](#남은-과제)) |
 
-테스트 **140개 전부 통과** (`pytest tests/ -x -q`).
+테스트 **185개 전부 통과** (`pytest tests/ -x -q`).
 
 ### 시스템 구성도
 
@@ -139,7 +140,7 @@ flowchart LR
 
     subgraph LOOP["ReAct 루프 — 예산 소진까지 재시도"]
         direction LR
-        P["plan"] --> A["agent<br/>ReAct · 도구 8종"]
+        P["plan"] --> A["agent<br/>ReAct · 도구 9종"]
         A --> J["judge<br/>🎯 별도 벤더"]
         J --> V{"validate<br/>코드가 판정"}
         V -.->|"미달"| A
@@ -149,7 +150,7 @@ flowchart LR
     V -->|"통과"| OK(["✅ auto_draft<br/>초안 + 인용 조항"])
 
     PRE -.->|"E1~E4"| ESC(["🔔 escalated<br/>초안 없음 + 사유"])
-    LOOP -.->|"E5~E8"| ESC
+    LOOP -.->|"E5~E9"| ESC
 
     classDef jud  fill:#412991,stroke:#2d1c66,color:#fff
     classDef esc  fill:#e67e22,stroke:#ba6318,color:#fff
@@ -159,7 +160,7 @@ flowchart LR
     class OK good
 ```
 
-실선은 정상 진행, **점선은 재시도·에스컬레이션**(초안 생성 중단)입니다. E1~E8의 내용은 [바로 아래 표](#세-가지-종료-상태)에 있습니다.
+실선은 정상 진행, **점선은 재시도·에스컬레이션**(초안 생성 중단)입니다. E1~E9의 내용은 [바로 아래 표](#세-가지-종료-상태)에 있습니다.
 
 **노드 순서(`plan → agent → judge → validate`)는 설계 승인 없이 바꾸지 않습니다.** `judge`는 **도구가 아니라 그래프 노드**이며, 오프라인 eval과 **동일한 함수**(`app/modules/reply/judge.py:judge_reply()`)를 호출합니다 — 그래야 EVAL.md의 Judge 신뢰도 수치가 곧 배포된 Judge의 신뢰도입니다.
 
@@ -172,13 +173,14 @@ flowchart LR
 | `search_policy` | 정책 조항 검색 (ChromaDB + BGE-reranker) |
 | `lookup_order` | 주문 상태·배송 추적 조회 (합성 SQLite) |
 | `check_customer_tier` | 고객 등급 조회 (등급별 정책 분기용) |
+| `check_live_notices` | 운영자가 쓴 라이브 공지 조회 — 정적 RAG가 못 다루는 "지금 유효한 정보" (MCP, 읽기·멱등, async) |
 | `validate_draft_format` | 초안 형식 검증 (결정론적) |
-| `save_draft` | **게이트 5종 통과 시에만** 저장 |
+| `save_draft` | **게이트 6종 통과 시에만** 저장 |
 | `discard_draft` | 초안 폐기 (교체 시) |
 | `escalate_to_human` | 스스로 처리 불가 판단 시 명시적 신호 (→ E5) |
 | `submit_for_review` | 작성 완료 신호 |
 
-### `save_draft`의 결정론적 게이트 5종
+### `save_draft`의 결정론적 게이트 6종
 
 거부 시 **사유를 도구 응답으로 되돌려** 에이전트가 스스로 교정하게 합니다.
 
@@ -189,6 +191,7 @@ flowchart LR
 | ③ | **금지 표현** | 법적 확약·타사 비방·과장 (블랙리스트) |
 | ④ | **정책 인용 존재** | 정책 판단이 필요한 인텐트인데 인용 조항이 0건인가 |
 | ⑤ | **상담원 책임 고지** | 필수 고지 문구가 누락됐는가 — *모델이 프롬프트 지시를 빼먹는 경우가 실측되어 게이트로 강제* |
+| ⑥ | **라이브 공지 반영 누락** | 공지 조회가 필수인 인텐트인데 조회를 안 했거나, 활성·scope 일치 공지를 `applied_notices`에 반영하지 않았는가 |
 
 > ⑤가 있는 이유: **프롬프트만 믿지 않습니다.** "고지 문구를 반드시 넣어라"라고 지시해도 모델이 빠뜨리는 사례가 실제로 관측됐고, 안전 요구사항을 확률적 준수에 맡길 수 없어 코드 게이트로 승격했습니다.
 
@@ -199,10 +202,10 @@ flowchart LR
 | 상태 | 조건 | 상담원이 보는 것 |
 |---|---|---|
 | `auto_draft` | 에스컬레이션 미해당 & Judge 통과 & 코드 검증 통과 | 초안 + 인용 정책 + 사용 도구 |
-| `escalated` | 아래 8개 조건 중 하나라도 해당 | **초안 없음** + 사유 + 🔔 Slack 알림 |
+| `escalated` | 아래 9개 조건 중 하나라도 해당 | **초안 없음** + 사유 + 🔔 Slack 알림 |
 | `failed` | 파이프라인 예외 | 오류 표시 (내부 상세 비노출) |
 
-**에스컬레이션 조건 8종** — 판정은 전부 **코드**가 하며, 정의는 `app/modules/reply/routing.py` 한 곳에만 둡니다(프롬프트·게이트·eval이 같은 표를 참조).
+**에스컬레이션 조건 9종** — 판정은 전부 **코드**가 하며, 정의는 `app/modules/reply/routing.py` 한 곳에만 둡니다(프롬프트·게이트·eval이 같은 표를 참조).
 
 | | 조건 | 판정 시점 | | 조건 | 판정 시점 |
 |---|---|---|---|---|---|
@@ -210,10 +213,13 @@ flowchart LR
 | E2 | 고객이 사람을 명시 요청 | pre-agent | E6 | 주문 조회 실패 | 루프 중 |
 | E3 | `complaint` (보상·책임 판단) | pre-agent | E7 | `save_draft` 게이트 3연속 실패 | 루프 중 |
 | E4 | `flags`에 `W`(공격적 표현) | pre-agent | E8 | 재시도 예산 소진 | validate |
+| | | | E9 | 공지 조회 필수 인텐트인데 조회 실패 | 루프 중 |
 
 > **초안이 없는 것이 잘못된 초안보다 낫습니다.** 예산 소진 시 마지막 미달 초안을 그냥 내보내지 않습니다.
 >
 > E3(불만)을 자동 초안에서 뺀 이유: 보상 여부·금액 판단이 섞이는데 이건 정책 문서만으로 결정되지 않는 **제품 판단**입니다.
+>
+> E9 우선순위는 `E6 > E9 > E5 > E7`입니다(더 구체적인 근본 원인 우선 — E6과 같은 논리). `NOTICE_SOURCE`가 미설정(noop)이면 E9가 아닙니다 — 기능 비활성과 조회 실패를 구분합니다.
 
 ### MCP — 에스컬레이션 알림 (Phase 11)
 
@@ -264,8 +270,8 @@ sequenceDiagram
 |---|---|---|
 | 정책 준수 · 톤 적절성 | **별도 벤더 Judge LLM** → threshold는 코드 | 정성 판단은 LLM이 낫고, 커트라인은 코드가 안정적 |
 | 사람 개입 필요 여부 | LLM이 confidence 기록 → **코드가 임계값 비교** | 라우팅 결정을 LLM에 맡기면 제어가 깨짐 |
-| PII 재유출 · 근거 없는 확약 · 고지 누락 | **코드** (`save_draft` 게이트 5종) | 안전 검사는 확률적 판단에 맡기지 않음 |
-| 재시도 · 에스컬레이션 여부 | **코드** (budget 루프 · E1~E8) | — |
+| PII 재유출 · 근거 없는 확약 · 고지 누락 | **코드** (`save_draft` 게이트 6종) | 안전 검사는 확률적 판단에 맡기지 않음 |
+| 재시도 · 에스컬레이션 여부 | **코드** (budget 루프 · E1~E9) | — |
 
 ### 2. Judge는 도구가 아니라 별도 노드이며, 생성과 다른 벤더를 쓴다
 
@@ -470,7 +476,7 @@ This is the third time my order has been late and I want compensation
 ### 4. 테스트 · 평가
 
 ```bash
-pytest tests/ -x -q                                    # 140개, 모델 호출 없음
+pytest tests/ -x -q                                    # 185개, 모델 호출 없음
 
 .venv/bin/python evals/runners/run_triage.py --sample 20        # 스모크셋
 .venv/bin/python evals/runners/run_judge_reliability.py --sample 40
@@ -560,12 +566,13 @@ cs-assistant/
 │   ├── common/
 │   │   ├── llm/          # LLM 추상화 (Anthropic / OpenAI / Ollama / RunPod + ChatRunPod)
 │   │   ├── mcp/          # MCP 클라이언트 (base / client / factory / backends)
+│   │   │   └── notices/  # 라이브 공지 조회(Phase 12a) — base / factory / backends(noop/stub)
 │   │   ├── rag/          # 청킹, 임베딩, 리랭킹, ChromaDB
 │   │   └── privacy.py    # mask_pii — 모델 호출 전에만 호출
 │   ├── modules/
 │   │   ├── triage/       # 티켓 분류 (단일 호출 + structured output)
-│   │   └── reply/        # graph.py(LangGraph) / tools.py(도구 8종)
-│   │                     # judge.py(채점 함수) / routing.py(E1~E8 · 인텐트→도구 매핑)
+│   │   └── reply/        # graph.py(LangGraph) / tools.py(도구 9종)
+│   │                     # judge.py(채점 함수) / routing.py(E1~E9 · 인텐트→도구 매핑)
 │   └── main.py           # FastAPI (/triage · /reply · /reply/stream · /health)
 ├── frontend/             # Next.js 상담원 검토 UI
 ├── prompts/              # 프롬프트 (코드 인라인 금지, 변경은 단독 커밋)
@@ -573,11 +580,11 @@ cs-assistant/
 │   ├── raw/              # ★보호 경로 — Bitext (커밋 안 함)
 │   └── synthetic/        # 합성 정책 문서 + shop.db
 ├── evals/
-│   ├── golden/           # ★보호 경로 — 골든셋 6종 JSONL
+│   ├── golden/           # ★보호 경로 — 골든셋 7종 JSONL
 │   ├── runners/          # ★보호 경로 — 러너 6종 + check_thresholds.py
 │   └── reports/          # 실행 결과 JSON
 ├── scripts/              # 데이터 준비 · 인덱싱 · 골든셋 생성
-├── tests/                # pytest 140개 (모델 호출 없음)
+├── tests/                # pytest 185개 (모델 호출 없음)
 ├── .claude/
 │   ├── hooks/            # PreToolUse 훅 4종 (Python stdlib만)
 │   ├── rules/            # 규칙 모듈 (prompt-change / dev-loop / eval-integrity)
@@ -607,6 +614,9 @@ cs-assistant/
 | `SLACK_MCP_URL` · `SLACK_MCP_TOKEN` · `SLACK_ESCALATION_CHANNEL` | Slack MCP 연결 | — |
 | `SLACK_MCP_TOOL_NAME` | 도구 이름 **명시 지정**(비우면 `tools/list` 자동 발견 — 권장) | — (빈 값) |
 | `MCP_NOTIFY_TIMEOUT` | 알림 타임아웃(초) — 짧게 유지 (fail-soft) | `5` |
+| `NOTICE_SOURCE` | 라이브 공지 조회(Phase 12a) — `noop` / `stub`. 미설정 시 기능 비활성(E9 아님) | `noop` |
+| `NOTICE_DEFAULT_TTL_DAYS` | `valid_until` 공란 공지의 기본 유효기간(일) | `14` |
+| `NOTICE_MAX_COUNT` · `NOTICE_MAX_BODY_CHARS` | `check_live_notices` 반환 건수·본문 길이 상한 | `5` · `500` |
 | `RUNPOD_API_KEY` · `RUNPOD_ENDPOINT_ID` | 커스텀 어댑터 경로 | — |
 | `CHROMA_PERSIST_DIR` · `SHOP_DB_PATH` | 영구 저장 경로 | `./chroma_db` · `./data/synthetic/shop.db` |
 | `BGE_EMBED_MODEL` · `BGE_RERANK_MODEL` | 임베딩·리랭킹 모델 | `BAAI/bge-m3` · `BAAI/bge-reranker-base` |

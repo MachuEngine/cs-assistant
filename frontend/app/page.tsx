@@ -59,6 +59,7 @@ const ESCALATION_LABELS: Record<string, string> = {
   E6: "문의한 주문을 찾을 수 없습니다",
   E7: "초안 저장 검증에 반복 실패했습니다",
   E8: "재시도 예산을 소진했지만 검증을 통과하지 못했습니다",
+  E9: "라이브 공지 조회가 필요했지만 실패했습니다",
 };
 
 const DISCLAIMER =

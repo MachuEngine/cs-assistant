@@ -96,21 +96,26 @@
 | `search_policy` | 반품·교환·환불·배송 정책 조항 검색 | ChromaDB + Rerank |
 | `lookup_order` | 주문 상태·배송 추적 조회 | 합성 주문 DB(SQLite) |
 | `check_customer_tier` | 고객 등급 조회(등급별 정책 분기용) | 합성 고객 DB |
+| `check_live_notices` | 운영자가 작성한 라이브 공지 조회(Phase 12a) — 정적 정책 코퍼스가 못 다루는 "지금 유효한 정보" | MCP `NoticeSource`(읽기·멱등, async) |
 | `validate_draft_format` | 초안 형식 검증(인사·본문·마무리, 길이) | 함수 |
 | `save_draft` | 초안 저장 — 결정론적 게이트 통과 시에만 | 함수 |
 | `discard_draft` | 초안 폐기(교체 시) | 함수 |
 | `escalate_to_human` | 스스로 처리 불가 판단 시 명시적 에스컬레이션 신호 | 함수 |
 | `submit_for_review` | 작성 완료 신호(인자 없음) | 함수 |
 
-**`save_draft`의 결정론적 게이트 5종**
+> `check_live_notices`만 `async def`다 — MCP 클라이언트가 async라 `agent_node`는 모든 도구를
+> `ainvoke`로 호출한다(Phase 12a, 기존 8개 동기 도구도 LangChain이 투명하게 지원).
+
+**`save_draft`의 결정론적 게이트 6종**
 
 | # | 검사 | 거부 조건 |
 |---|---|---|
 | ① | **PII 재유출** | 초안에 **마스킹되지 않은 원본 PII 패턴**(이메일·전화·카드번호·주소)이 나타남. 마스킹 토큰(`{{EMAIL}}`) 자체는 허용 |
-| ② | **근거 없는 확약** | `search_policy`/`lookup_order`가 반환한 적 없는 금액·날짜·환불 확약이 초안에 포함 |
+| ② | **근거 없는 확약** | `search_policy`/`lookup_order`/`check_live_notices`(활성·scope 일치분만)가 반환한 적 없는 금액·날짜·환불 확약이 초안에 포함 |
 | ③ | **금지 표현** | 규칙 기반 블랙리스트 — 법적 확약(`guarantee`, `we are liable`), 타사 비방, 무조건 보상 약속 |
 | ④ | **정책 인용 존재** | 정책 인용이 **필수**인 인텐트(3절 매핑)인데 인용된 조항이 0건 |
 | ⑤ | **상담원 최종 책임 고지** | "This is a draft prepared by an AI assistant..." 고지 문구가 초안에 그대로 없음(로컬 모델이 프롬프트 지시를 빼먹는 사례가 실측되어, 프롬프트 신뢰 대신 게이트로 강제하기로 결정 — 2026-07-28) |
+| ⑥ | **라이브 공지 반영 누락**(Phase 12a) | 공지 조회 필수 인텐트인데 `check_live_notices` 미호출(`NOTICE_SOURCE=noop`이면 이 조건 미적용), 또는 활성·scope 일치 공지(`grounded_notices`)가 있는데 `applied_notices`가 이를 전부 포함하지 않음 |
 
 거부 시 사유를 도구 응답으로 되돌려 에이전트가 스스로 교정하게 한다(자기교정 루프).
 
@@ -175,38 +180,43 @@ class ReplyState(TypedDict):
 | E6 | `lookup_order`가 해당 주문을 못 찾음 | agent 중 |
 | E7 | `save_draft` 게이트를 `SAVE_DRAFT_FAIL_STREAK`회(기본 3) 연속 통과 못함 | agent 중 |
 | E8 | `budget` 소진 후에도 `validate` 미통과 | validate 후 |
+| E9 | 공지 조회 필수 인텐트(3.2절)인데 `check_live_notices` 조회가 실패(Phase 12a) | agent 중 |
 
 > E3(complaint)를 자동 초안 대상에서 뺀 이유: 불만 티켓은 보상 여부·금액 판단이 섞이는데, 이건 정책 문서만으로 결정되지 않는 **제품 판단**이다. 초깃값으로 전량 에스컬레이션하고, 에스컬레이션 FP율이 과하면 그때 세분화한다.
+>
+> E9 우선순위는 `E6 > E9 > E5 > E7`이다 — E6이 `lookup_order`가 실제로 확인한 결정론적 사실을 최우선하는 것과 같은 논리로, 더 구체적인 근본 원인을 먼저 본다(Phase 12a). `NOTICE_SOURCE=noop`(기능 비활성)은 E9이 아니다 — 조회를 시도했는데 실패한 경우에만 해당한다.
 
 ### 3.2 인텐트 → 도구 매핑
 
-`save_draft` 게이트 ④(정책 인용 필수 여부)와 프롬프트의 도구 안내가 이 표를 쓴다.
+`save_draft` 게이트 ④(정책 인용 필수 여부)와 프롬프트의 도구 안내가 이 표를 쓴다. "공지" 열은
+게이트 ⑥(라이브 공지 반영, Phase 12a)이 참조하는 `NOTICE_REQUIRED`다.
 
-| 카테고리 | 인텐트 | `search_policy` | `lookup_order` | `check_customer_tier` |
-|---|---|:---:|:---:|:---:|
-| ORDER | `cancel_order` | **필수** | **필수** | 선택 |
-| ORDER | `change_order` | **필수** | **필수** | — |
-| ORDER | `place_order` | 선택 | — | 선택 |
-| ORDER | `track_order` | — | **필수** | — |
-| CANCEL | `check_cancellation_fee` | **필수** | **필수** | **필수** |
-| REFUND | `check_refund_policy` | **필수** | — | 선택 |
-| REFUND | `get_refund` | **필수** | **필수** | **필수** |
-| REFUND | `track_refund` | 선택 | **필수** | — |
-| DELIVERY | `delivery_options` | **필수** | — | **필수** |
-| DELIVERY | `delivery_period` | **필수** | 선택 | — |
-| SHIPPING | `change_shipping_address` | **필수** | **필수** | — |
-| SHIPPING | `set_up_shipping_address` | 선택 | — | — |
-| PAYMENT | `check_payment_methods` | **필수** | — | 선택 |
-| PAYMENT | `payment_issue` | 선택 | **필수** | — |
-| INVOICE | `check_invoice` / `get_invoice` | 선택 | **필수** | — |
-| ACCOUNT | `create_account` / `delete_account` / `edit_account` / `switch_account` / `recover_password` / `registration_problems` | — | — | — |
-| SUBSCRIPTION | `newsletter_subscription` | — | — | — |
-| FEEDBACK | `review` | — | — | — |
-| FEEDBACK | `complaint` | — | — | — (E3: 에스컬레이션) |
-| CONTACT | `contact_human_agent` / `contact_customer_service` | — | — | — (E2: 에스컬레이션) |
+| 카테고리 | 인텐트 | `search_policy` | `lookup_order` | `check_customer_tier` | 공지 |
+|---|---|:---:|:---:|:---:|:---:|
+| ORDER | `cancel_order` | **필수** | **필수** | 선택 | 선택 |
+| ORDER | `change_order` | **필수** | **필수** | — | — |
+| ORDER | `place_order` | 선택 | — | 선택 | 선택 |
+| ORDER | `track_order` | — | **필수** | — | **필수** |
+| CANCEL | `check_cancellation_fee` | **필수** | **필수** | **필수** | 선택 |
+| REFUND | `check_refund_policy` | **필수** | — | 선택 | 선택 |
+| REFUND | `get_refund` | **필수** | **필수** | **필수** | 선택 |
+| REFUND | `track_refund` | 선택 | **필수** | — | **필수** |
+| DELIVERY | `delivery_options` | **필수** | — | **필수** | **필수** |
+| DELIVERY | `delivery_period` | **필수** | 선택 | — | **필수** |
+| SHIPPING | `change_shipping_address` | **필수** | **필수** | — | **필수** |
+| SHIPPING | `set_up_shipping_address` | 선택 | — | — | 선택 |
+| PAYMENT | `check_payment_methods` | **필수** | — | 선택 | **필수** |
+| PAYMENT | `payment_issue` | 선택 | **필수** | — | **필수** |
+| INVOICE | `check_invoice` / `get_invoice` | 선택 | **필수** | — | — |
+| ACCOUNT | `create_account` / `delete_account` / `edit_account` / `switch_account` / `recover_password` / `registration_problems` | — | — | — | — |
+| SUBSCRIPTION | `newsletter_subscription` | — | — | — | — |
+| FEEDBACK | `review` | — | — | — | — |
+| FEEDBACK | `complaint` | — | — | — (E3: 에스컬레이션) | — |
+| CONTACT | `contact_human_agent` / `contact_customer_service` | — | — | — (E2: 에스컬레이션) | — |
 
 - **필수** = 해당 도구를 호출하지 않고 저장하면 `save_draft`가 거부
 - ACCOUNT/SUBSCRIPTION/FEEDBACK/CONTACT 계열은 **절차 안내**라 정책 조항 인용이 필요 없다 — 여기까지 인용을 강제하면 없는 근거를 만들어내는 유인이 생긴다
+- **공지 필수 7개**: `delivery_period` `delivery_options` `track_order` `track_refund` `payment_issue` `change_shipping_address` `check_payment_methods`. PROMPTS.md Phase 12 표 원안은 6개였으나, `check_payment_methods`가 버킷에서 누락된 것을 사람에게 확인해 필수로 추가 확정했다(2026-07-30) — 결제수단 FAQ성 인텐트지만 결제 관련 실시간 이슈(예: 특정 카드사 장애)의 영향을 받을 수 있다고 판단
 
 ### 3.3 파라미터 초깃값
 
@@ -223,6 +233,9 @@ class ReplyState(TypedDict):
 | `JUDGE_PASS_TONE` | **≥ 4 / 5** | validate 통과 조건 |
 | 청킹 크기 | **300–500 토큰, overlap 50** | 조항 단위를 우선하되 500 초과 시 문장 경계로 분할. 각 청크 앞에 **조항 헤더를 반복 삽입**한다(인용 정확도가 게이트 ④에 직결) |
 | 검색 `top_k` | **정책 3, rerank 전 10** | 분필과 동일 |
+| `NOTICE_DEFAULT_TTL_DAYS` | **14** | Phase 12a — `valid_until`이 공란인 공지의 기본 유효기간(`valid_from`부터 일수, 양쪽 포함) |
+| `NOTICE_MAX_COUNT` | **5** | Phase 12a — `check_live_notices` 한 번에 반환하는 공지 건수 상한(컨텍스트 폭주 방지) |
+| `NOTICE_MAX_BODY_CHARS` | **500** | Phase 12a — 공지 본문 길이 상한(초과분은 절단) |
 
 ### 3.4 Judge 루브릭 · 출력 스키마
 
@@ -416,12 +429,13 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 | ⭐ | **에스컬레이션 Recall** | 함수(골든셋) | ≥ 0.9 |
 | ⭐ | 에스컬레이션 FP율 | 함수 | 참고값 — 트레이드오프는 사람 판단 |
 | 🏁 | 상담원 무수정 채택률 | 사람 | 북극성 |
+| ⚪ | 라이브 공지 반영 FP/FN, 게이트⑥ 발동 건수(Phase 12a) | 함수(골든셋) | **첫 사이클은 리포트만** — `check_thresholds.py`에 아직 게이트로 넣지 않는다(2~3회 이력 후 사람이 결정) |
 
 **에스컬레이션 Recall이 이 프로젝트 고유 지표다.** "사람이 개입해야 했던 케이스를 실제로 넘겼는가". FN(넘겼어야 하는데 자동 초안을 낸 것)이 FP보다 훨씬 위험하므로 Recall만 게이트로 두고 FP율은 참고값으로 관리한다.
 
 **Judge 신뢰도를 먼저 검증한다.** κ가 목표 미달이면 그 Judge 점수로 통과/재시도를 결정하지 않는다. 못 믿을 Judge 위에 다른 수치를 쌓으면 전부 다시 해야 한다.
 
-### 6.3 골든셋 6종
+### 6.3 골든셋 7종
 
 | 파일 | 규모 | 라벨 | 만드는 법 |
 |---|---|---|---|
@@ -429,10 +443,16 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 | `pii_golden.jsonl` | 50 | PII 스팬 위치·유형 | 하이드레이션된 티켓에 **영문 PII를 의도적으로 주입**하고 정답 스팬 기록 |
 | `policy_violation_golden.jsonl` | 50 | 위반 유형·스팬 | 초안에 위반을 의도적으로 심음(무근거 확약 20 / 정책 모순 15 / 인용 누락 10 / 범위 밖 약속 5) |
 | `tone_golden.jsonl` | 30 | 5점 척도(사람) | Phase 6 완료 후 생성된 실제 초안에 직접 라벨링 |
-| `escalation_golden.jsonl` | 40 | `should_escalate` + 해당 조건 ID | E1–E8 각 조건을 재현하는 케이스 + 에스컬레이션 불필요한 대조군 |
+| `escalation_golden.jsonl` | 40 | `should_escalate` + 해당 조건 ID | E1–E9 각 조건을 재현하는 케이스 + 에스컬레이션 불필요한 대조군 |
 | `retrieval_golden.jsonl` | 30 | 질의 → 정답 조항 번호 | 합성 정책 문서에서 직접 작성 |
+| `notices_golden.jsonl` | 19 | 반영 여부(`expected_grounded_ids`) · 에스컬레이션(E9) | Phase 12a. 활성+scope 일치(반영 필요) / 활성+scope 불일치(반영 금지) / 비활성(만료·`active=false`·TTL 초과) / 조회 실패(필수 인텐트→E9). 전부 결정론적(`is_notice_active` 순수 함수 + stub 소스) — best-effort 구간 없음. 각 행이 자체 공지 레코드와 고정 `as_of` 기준일을 포함해 실행 시점과 무관하게 재현된다 |
 
 > `pii_golden`이 필요한 이유: Bitext는 이미 익명화돼 있어 **마스킹할 실제 PII가 없다.** 🔴 지표를 측정하려면 주입한 테스트셋이 반드시 있어야 한다.
+
+**결정론적 테스트 목록 — 라이브 공지 활성 판정(Phase 12a)**: `is_notice_active()`의 경계값은
+전부 `tests/test_notices.py`에 결정론적 단위 테스트로 고정돼 있다 — 시작일 당일(포함) · 종료일
+당일(포함) · 종료일 다음날(제외) · `valid_until` 공란 + 기본 TTL 만료일(포함) · TTL 만료 다음날
+(제외) · `active=false`가 날짜 범위와 무관하게 항상 우선.
 
 > ⚠️ **분필에서 얻은 함정**: "eval이 존재하는가"와 "내 변경이 eval이 실제로 exercise하는 경로에 있는가"는 별개다. 분필은 생성 프롬프트를 개선했는데 eval 수치가 전혀 변하지 않았고, 원인은 eval이 하드코딩된 고정 출력을 채점하는 구조였기 때문이다. **CS eval은 실제로 파이프라인을 돌려 새 초안을 생성한 뒤 채점하도록 설계한다.**
 
