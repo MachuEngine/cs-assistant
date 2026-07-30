@@ -51,7 +51,8 @@ def test_get_notice_source_switches_to_stub(monkeypatch):
 
 
 def test_get_notice_source_unknown_backend_raises(monkeypatch):
-    monkeypatch.setenv("NOTICE_SOURCE", "notion")
+    # notion은 12c에서 실제 백엔드가 됐다 — 진짜 없는 값으로 검사한다
+    monkeypatch.setenv("NOTICE_SOURCE", "confluence")
     with pytest.raises(NotImplementedError):
         get_notice_source()
 
@@ -220,3 +221,83 @@ async def test_check_live_notices_respects_count_and_length_caps(monkeypatch):
     result = await reply_tools.check_live_notices.ainvoke({})
     assert "N2" not in result  # 두 번째 공지는 건수 상한에 걸려 반환 문자열에서 잘림
     assert "xxxxxxxxxx... [truncated]" in result
+
+
+# --- 리뷰 지적 재현: 마스킹·fail-open (2026-07-31) ---------------------------
+
+@pytest.mark.asyncio
+async def test_check_live_notices_masks_pii_in_title(monkeypatch):
+    """제목도 모델 컨텍스트로 들어가므로 body와 동일하게 마스킹돼야 한다.
+    운영자가 제목에 연락처를 쓰는 일은 흔하다(하드룰 2)."""
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([
+        _record(notice_id="N1", scope=["DELIVERY"],
+                title="Delays — escalate to ops@northwind.example", body="See above."),
+    ])
+    _fresh_session(intent="delivery_period")
+    result = await reply_tools.check_live_notices.ainvoke({})
+    assert "ops@northwind.example" not in result
+    assert "{{EMAIL}}" in result
+
+
+@pytest.mark.asyncio
+async def test_malformed_record_sets_lookup_failed_not_silent_success(monkeypatch):
+    """활성 판정이 터지는 레코드(valid_from 누락)가 오면 '공지 없음'으로
+    조용히 넘어가면 안 된다 — fail-fast가 fail-open으로 뒤집히는 경로."""
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([
+        {"notice_id": "N1", "title": "t", "body": "b", "scope": ["DELIVERY"],
+         "active": True},  # valid_from 없음 → is_notice_active가 KeyError
+    ])
+    _fresh_session(intent="delivery_period")
+    result = await reply_tools.check_live_notices.ainvoke({})
+
+    ctx = reply_tools.get_ctx()
+    assert ctx["notice_lookup_failed"] is True, "실패가 조용히 성공으로 처리됐다"
+    assert "failed" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_lookup_failed_flag_resets_on_successful_retry(monkeypatch):
+    """일시 실패 후 재조회에 성공하면 E9로 뒤집히면 안 된다(오탐)."""
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    _fresh_session(intent="delivery_period")
+
+    notice_stub.set_failure(RuntimeError("transient timeout"))
+    await reply_tools.check_live_notices.ainvoke({})
+    assert reply_tools.get_ctx()["notice_lookup_failed"] is True
+
+    notice_stub.set_failure(None)
+    notice_stub.set_notices([_record(notice_id="N1", scope=["DELIVERY"])])
+    await reply_tools.check_live_notices.ainvoke({})
+
+    ctx = reply_tools.get_ctx()
+    assert ctx["notice_lookup_failed"] is False, "재조회 성공 후에도 플래그가 남아 E9가 된다"
+    assert {n["notice_id"] for n in ctx["grounded_notices"]} == {"N1"}
+
+
+@pytest.mark.asyncio
+async def test_repeated_calls_do_not_duplicate_evidence_log(monkeypatch):
+    """같은 공지를 여러 번 조회해도 게이트② 대조 로그가 부풀지 않아야 한다."""
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([_record(notice_id="N1", scope=["DELIVERY"], body="Delayed 3 days.")])
+    _fresh_session(intent="delivery_period")
+
+    await reply_tools.check_live_notices.ainvoke({})
+    await reply_tools.check_live_notices.ainvoke({})
+
+    log = reply_tools.get_ctx()["tool_results_log"]
+    assert log.count("Delayed 3 days.") == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_failure_message_is_english(monkeypatch):
+    """모델 컨텍스트로 가는 문자열은 영어다(CLAUDE.md 언어 정책) — 내부 예외
+    메시지(한국어·env 변수명·도구 목록)를 그대로 흘리지 않는다."""
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_failure(RuntimeError("노션 MCP 통신 실패: NOTION_MCP_URL 미설정"))
+    _fresh_session(intent="delivery_period")
+    result = await reply_tools.check_live_notices.ainvoke({})
+
+    assert result.isascii(), f"한국어/내부 정보가 모델 컨텍스트로 샜다: {result}"
+    assert "NOTION_MCP_URL" not in result

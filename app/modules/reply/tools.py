@@ -13,6 +13,7 @@ docstring 참고(분필에서 확인된 "노드 안에서 set() 호출 시 전�
 피하는 방법).
 """
 import contextvars
+import logging
 import os
 import pathlib
 import re
@@ -27,6 +28,8 @@ from app.common.rag.parser import parse_policy_doc
 from app.common.rag.singleton import get_retriever
 
 from .routing import INTENT_TO_CATEGORY, requires_live_notices, requires_policy_citation
+
+logger = logging.getLogger(__name__)
 
 # --- 알려진 정책 조항 ID (게이트 ④가 참조) ---------------------------------
 # Phase 3의 파서를 재사용해 조항 번호만 뽑는다(정책 문서 파싱 로직을 새로
@@ -174,7 +177,12 @@ def check_customer_tier(customer_id: str) -> str:
 # --- 라이브 공지 조회 (Phase 12a) --------------------------------------------
 
 def _cap_notices(notices: list[dict]) -> list[dict]:
-    """건수·본문 길이를 env로 상한(컨텍스트 폭주 방지). 본문은 mask_pii() 통과."""
+    """건수 상한 + 본문 길이 상한(컨텍스트 폭주 방지).
+
+    [엄수] `title`도 `body`와 똑같이 mask_pii()를 통과시킨다 — 둘 다 모델
+    컨텍스트로 들어가는 외부 텍스트다(하드룰 2). 운영자가 제목에 담당자
+    연락처를 적는 일이 흔해서, 제목만 빠뜨리면 그대로 원본 PII가 나간다.
+    """
     max_count = int(os.getenv("NOTICE_MAX_COUNT", "5"))
     max_chars = int(os.getenv("NOTICE_MAX_BODY_CHARS", "500"))
     out = []
@@ -182,7 +190,7 @@ def _cap_notices(notices: list[dict]) -> list[dict]:
         body = mask_pii(n["body"])
         if len(body) > max_chars:
             body = body[:max_chars] + "... [truncated]"
-        out.append({**n, "body": body})
+        out.append({**n, "title": mask_pii(n["title"]), "body": body})
     return out
 
 
@@ -199,30 +207,45 @@ async def check_live_notices() -> str:
     ctx["notices_checked"] = True
     ctx["tools_used"].append("check_live_notices")
 
+    # [엄수] 조회부터 활성 판정·정규화까지 **전부** 이 try 안에 둔다.
+    # is_notice_active()는 잘못된 레코드에 KeyError/ValueError를 던지는데,
+    # 그게 try 밖에서 터지면 agent_node의 범용 except가 삼켜
+    # notice_lookup_failed=False로 남는다 → E9가 안 걸리고 "공지 없음"으로
+    # 조용히 통과한다. base.py가 "가장 나쁘다"고 지목한 바로 그 상태다.
     try:
         raw = await get_notice_source().get_active_notices()
-    except Exception as e:
+        active = [n for n in raw if is_notice_active(n)]
+        category = INTENT_TO_CATEGORY.get(ctx["intent"], "")
+        grounded = [n for n in active if category in n.get("scope", [])]
+        shown = _cap_notices(active) if active else []
+    except Exception:
         ctx["notice_lookup_failed"] = True
+        # 상세는 로그로만 — 모델 컨텍스트에는 영어 요약만 돌려준다(언어 정책,
+        # 그리고 내부 env 이름·도구 목록이 초안으로 새는 표면을 줄인다).
+        logger.warning("라이브 공지 조회 실패 — 파이프라인은 계속합니다.", exc_info=True)
         return (
-            f"Notice lookup failed ({e}). Proceed using the policy documents "
-            "only; do not guess at current live notices."
+            "Notice lookup failed. Proceed using the policy documents only; "
+            "do not state or guess at any current live notice."
         )
 
-    active = [n for n in raw if is_notice_active(n)]
+    # 성공했으면 이전 시도의 실패 흔적을 지운다 — 일시 실패 후 재조회에
+    # 성공했는데도 E9로 끝나면 근거가 충족된 정상 초안을 버리게 된다.
+    ctx["notice_lookup_failed"] = False
     ctx["active_notices"] = active
-
-    category = INTENT_TO_CATEGORY.get(ctx["intent"], "")
-    grounded = [n for n in active if category in n.get("scope", [])]
     ctx["grounded_notices"] = grounded
+
     for n in grounded:
         # 게이트②(근거 없는 확약) 승격 대상 — scope가 안 맞거나 비활성인 공지는
         # 여기 들어오지 않으므로 그 본문의 금액/사실은 근거로 쓸 수 없다.
-        ctx["tool_results_log"].append(mask_pii(n["body"]))
+        # 재호출 시 같은 본문이 중복 적재되지 않게 한다(대조 로그·judge 프롬프트 팽창 방지).
+        masked_body = mask_pii(n["body"])
+        if masked_body not in ctx["tool_results_log"]:
+            ctx["tool_results_log"].append(masked_body)
 
     if not active:
         return "No active live notices."
 
-    shown = _cap_notices(active)  # 반환은 활성 전부(scope 무관) — 필터는 도구가 아니라 게이트가 한다
+    # 반환은 활성 전부(scope 무관) — scope 필터를 도구에 넣으면 eval이 FP를 측정할 수 없다
     return "\n\n".join(
         f"[{n['notice_id']}] {n['title']} (scope: {', '.join(n['scope'])})\n{n['body']}"
         for n in shown
