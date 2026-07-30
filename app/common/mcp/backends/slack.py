@@ -24,6 +24,8 @@ from app.modules.reply.routing import ESCALATION_REASONS
 
 from ..base import EscalationNotifier
 from ..client import MCPClient, MCPError
+from ..toolschema import find_key as _find_key
+from ..toolschema import properties as _properties
 
 logger = logging.getLogger(__name__)
 
@@ -78,26 +80,6 @@ def build_escalation_message(
     lines.append(f"• 발생 시각: {now}")
     lines.append("_티켓 본문과 초안은 이 알림에 포함되지 않습니다 — CS 시스템에서 확인하세요._")
     return "\n".join(lines)
-
-
-def _properties(tool: dict) -> dict:
-    schema = tool.get("inputSchema") or {}
-    props = schema.get("properties")
-    return props if isinstance(props, dict) else {}
-
-
-def _find_key(props: dict, candidates: tuple[str, ...]) -> str | None:
-    """스키마 property 중 candidates에 해당하는 키를 찾는다(정확 일치 우선)."""
-    lowered = {name.lower(): name for name in props}
-    for candidate in candidates:
-        if candidate in lowered:
-            return lowered[candidate]
-    # 부분 일치 폴백 — "slack_channel" 같은 접두/접미 변형 대응
-    for candidate in candidates:
-        for name_lower, original in lowered.items():
-            if candidate in name_lower:
-                return original
-    return None
 
 
 def _has_channel_and_text_keys(tool: dict) -> bool:
