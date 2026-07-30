@@ -14,7 +14,7 @@
 ![MCP](https://img.shields.io/badge/MCP-000000)
 ![Caddy](https://img.shields.io/badge/Caddy-175F8C?logo=caddy&logoColor=white)
 
-**🚧 Phase 0~11 구현 완료 · 실 배포와 전체 eval만 남음**
+**🚧 Phase 0~12 구현 완료 · 실 배포와 전체 eval만 남음**
 
 [한눈에 보기](#한눈에-보기) · [아키텍처](#아키텍처) · [설계 원칙](#설계-원칙) · [엔지니어링 하이라이트](#엔지니어링-하이라이트) · [품질 평가](#품질-평가) · [빠른 시작](#빠른-시작-로컬) · [배포](#배포) · [남은 과제](#남은-과제)
 
@@ -38,7 +38,7 @@
 | # | 증명하려는 것 | 방법 |
 |---|---|---|
 | 1 | **아키텍처 일반화** | 선행 프로젝트([분필](https://github.com/MachuEngine/bunpil), 교육 도메인)에서 검증한 LangGraph ReAct + RAG + 가드레일 + eval 구조가 전혀 다른 산업 도메인에서도 성립하는지 |
-| 2 | **벤더 통합 깊이** | 공식 LangChain 통합(`ChatAnthropic`) · `BaseChatModel` 직접 상속 커스텀 어댑터(RunPod) · **MCP 클라이언트**(Slack) 세 가지를 전부 구현하고 판단 기준을 문서화 |
+| 2 | **벤더 통합 깊이** | 공식 LangChain 통합(`ChatAnthropic`) · `BaseChatModel` 직접 상속 커스텀 어댑터(RunPod) · **MCP 클라이언트 2종**(Slack 알림=쓰기·루프 밖, Notion 공지=읽기·루프 안)을 전부 구현하고 판단 기준을 문서화 |
 | 3 | **개발 과정의 하네스 설계** | 에이전트 제품에 가드레일을 넣는 것과, 에이전트로 개발하는 과정에 가드레일을 넣는 것은 같은 문제라는 관점을 실제 훅·루프로 구현 |
 
 ### 구현 현황
@@ -51,7 +51,7 @@
 | **생성 ↔ Judge 벤더 완전 분리** (Anthropic ↔ OpenAI) | ✅ 완료 |
 | `save_draft` 결정론적 게이트 6종 | ✅ 완료 |
 | 에스컬레이션 E1~E9 (전부 코드가 판정) | ✅ 완료 |
-| **라이브 공지 조회 (`check_live_notices`, Phase 12a)** | ✅ 코드 완료 (noop/stub) · ⏸️ 노션 어댑터 미결선(12b/12c) |
+| **라이브 공지 조회 (`check_live_notices`, Phase 12)** | ✅ 완료 — 노션 MCP 실측·어댑터 결선까지 (읽기 전용, 루프 안 도구) |
 | RAG (ChromaDB + BGE-M3 + BGE-reranker, 전부 CPU) | ✅ 완료 |
 | 평가 체계 (골든셋 7종 431건 + 러너 6종 + 초안 러너 1종) | ✅ 완료 (스모크셋 기준) |
 | **Judge 신뢰도 κ ≥ 0.4** | ✅ 달성 (0.466 — [품질 평가](#품질-평가)) |
@@ -62,7 +62,7 @@
 | 배포 구성 (Docker + Compose + Caddy HTTPS) | ✅ 구성 완료 · ⏸️ 실 클라우드 VM 미배포 |
 | 전체 eval (`--full`) | ⬜ 미실행 ([남은 과제](#남은-과제)) |
 
-테스트 **185개 전부 통과** (`pytest tests/ -x -q`).
+테스트 **215개 전부 통과** (`pytest tests/ -x -q`).
 
 ### 시스템 구성도
 
@@ -77,7 +77,8 @@ flowchart LR
     R --> OK["✅ auto_draft<br/>초안 + 인용 조항"]
 
     T -.->|"E1"| ESC["🔔 escalated<br/>초안 없음 + 사유"]
-    R -.->|"E5~E8"| ESC
+    R -.->|"E5~E9"| ESC
+    R -.->|"읽기 · 멱등"| NO["Notion 공지<br/>(MCP)"]
     ESC -.->|"fail-soft"| SL["Slack<br/>(MCP)"]
 
     classDef guard fill:#c0392b,stroke:#7b241c,color:#fff
@@ -128,7 +129,8 @@ Bitext 데이터셋이 **영어 전용**이기 때문입니다. 인텐트 라벨
 | 생성 LLM | Anthropic `claude-sonnet-5` (`ChatAnthropic`) |
 | Judge LLM | OpenAI `gpt-5.6-luna` — **생성과 다른 벤더** |
 | 커스텀 어댑터 | Ollama / RunPod Serverless (`BaseChatModel` 직접 상속) |
-| 외부 알림 | MCP 클라이언트 → `zencoderai/slack-mcp` (Streamable HTTP) |
+| 외부 알림 | MCP 클라이언트 → `zencoderai/slack-mcp` (Streamable HTTP, 쓰기·루프 밖) |
+| 라이브 공지 | MCP 클라이언트 → `makenotion/notion-mcp-server` (Streamable HTTP, 읽기·루프 안) |
 | 합성 데이터 | SQLite (주문·고객) + 합성 정책 문서 30개 조항 |
 | 배포 | Docker + Docker Compose + Caddy HTTPS |
 
@@ -191,7 +193,7 @@ flowchart LR
 | ③ | **금지 표현** | 법적 확약·타사 비방·과장 (블랙리스트) |
 | ④ | **정책 인용 존재** | 정책 판단이 필요한 인텐트인데 인용 조항이 0건인가 |
 | ⑤ | **상담원 책임 고지** | 필수 고지 문구가 누락됐는가 — *모델이 프롬프트 지시를 빼먹는 경우가 실측되어 게이트로 강제* |
-| ⑥ | **라이브 공지 반영 누락** | 공지 조회가 필수인 인텐트인데 조회를 안 했거나, 활성·scope 일치 공지를 `applied_notices`에 반영하지 않았는가 |
+| ⑥ | **라이브 공지 인지 누락** | 공지 조회가 필수인 인텐트인데 조회를 안 했거나, 활성·scope 일치 공지를 `applied_notices`에 명시하지 않았는가 (본문 반영까지는 강제하지 않음 — 무관한 공지를 억지로 끼워넣는 유인을 피하기 위해) |
 
 > ⑤가 있는 이유: **프롬프트만 믿지 않습니다.** "고지 문구를 반드시 넣어라"라고 지시해도 모델이 빠뜨리는 사례가 실제로 관측됐고, 안전 요구사항을 확률적 준수에 맡길 수 없어 코드 게이트로 승격했습니다.
 
@@ -495,22 +497,24 @@ flowchart LR
     FE -->|"내부 프록시"| AP["app · FastAPI<br/>:8000"]
     AP --> VOL[("ChromaDB<br/>볼륨")]
     AP --> SM["slack-mcp<br/>호스트 포트 없음"]
+    AP --> NM["notion-mcp<br/>호스트 포트 없음"]
     AP -.->|"API 호출"| EXT["Anthropic<br/>OpenAI"]
     SM -.-> SL["Slack"]
+    NM -.-> NO["Notion"]
 
     classDef svc fill:#fff9c4,stroke:#b8a642,color:#000
     classDef pub fill:#175F8C,stroke:#0f4363,color:#fff
-    class FE,AP,SM,VOL svc
+    class FE,AP,SM,NM,VOL svc
     class CA pub
 ```
 
 노란색이 `docker compose`가 띄우는 서비스입니다.
 
 ```bash
-docker compose up -d --build     # app + frontend + slack-mcp
+docker compose up -d --build     # app + frontend + slack-mcp + notion-mcp
 ```
 
-- `slack-mcp`는 `expose`만 하고 **호스트 포트를 열지 않습니다** — 내부 네트워크에서만 접근 가능.
+- `slack-mcp`·`notion-mcp`는 `expose`만 하고 **호스트 포트를 열지 않습니다** — 내부 네트워크에서만 접근 가능.
 - Caddy는 `frontend`(3000)만 바라보면 되고, `frontend/app/api/*/route.ts`가 컨테이너 내부에서 FastAPI로 프록시합니다.
 - CI(`.github/workflows/ci.yml`)는 매 PR에서 pytest + 백엔드 import 스모크 + 프론트 lint/build를 돌립니다. **모델 호출 없음** — 전체 eval은 CI에서 자동 실행하지 않습니다(변동성 + 비용).
 
@@ -566,7 +570,8 @@ cs-assistant/
 │   ├── common/
 │   │   ├── llm/          # LLM 추상화 (Anthropic / OpenAI / Ollama / RunPod + ChatRunPod)
 │   │   ├── mcp/          # MCP 클라이언트 (base / client / factory / backends)
-│   │   │   └── notices/  # 라이브 공지 조회(Phase 12a) — base / factory / backends(noop/stub)
+│   │   │   └── notices/  # 라이브 공지 조회(Phase 12) — base / activity / factory
+│   │   │                 # backends(noop / stub / notion)
 │   │   ├── rag/          # 청킹, 임베딩, 리랭킹, ChromaDB
 │   │   └── privacy.py    # mask_pii — 모델 호출 전에만 호출
 │   ├── modules/
@@ -589,7 +594,7 @@ cs-assistant/
 │   ├── hooks/            # PreToolUse 훅 4종 (Python stdlib만)
 │   ├── rules/            # 규칙 모듈 (prompt-change / dev-loop / eval-integrity)
 │   └── settings.json     # permissions.deny + 훅 등록
-├── docker-compose.yml    # app + frontend + slack-mcp
+├── docker-compose.yml    # app + frontend + slack-mcp + notion-mcp
 └── Caddyfile
 ```
 

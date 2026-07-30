@@ -115,7 +115,17 @@
 | ③ | **금지 표현** | 규칙 기반 블랙리스트 — 법적 확약(`guarantee`, `we are liable`), 타사 비방, 무조건 보상 약속 |
 | ④ | **정책 인용 존재** | 정책 인용이 **필수**인 인텐트(3절 매핑)인데 인용된 조항이 0건 |
 | ⑤ | **상담원 최종 책임 고지** | "This is a draft prepared by an AI assistant..." 고지 문구가 초안에 그대로 없음(로컬 모델이 프롬프트 지시를 빼먹는 사례가 실측되어, 프롬프트 신뢰 대신 게이트로 강제하기로 결정 — 2026-07-28) |
-| ⑥ | **라이브 공지 반영 누락**(Phase 12a) | 공지 조회 필수 인텐트인데 `check_live_notices` 미호출(`NOTICE_SOURCE=noop`이면 이 조건 미적용), 또는 활성·scope 일치 공지(`grounded_notices`)가 있는데 `applied_notices`가 이를 전부 포함하지 않음 |
+| ⑥ | **라이브 공지 인지 누락**(Phase 12a) | 공지 조회 필수 인텐트인데 `check_live_notices` 미호출(`NOTICE_SOURCE=noop`이면 이 조건 미적용), 또는 활성·scope 일치 공지(`grounded_notices`)가 있는데 `applied_notices`가 이를 전부 포함하지 않음 |
+
+> **게이트 ⑥이 강제하는 것은 "반영"이 아니라 "인지"다.** 게이트 ④(정책 인용)는 조항 ID가
+> 초안 **본문에** 있는지 검사하지만, 게이트 ⑥은 `applied_notices` 인자에 `notice_id`가
+> 있는지만 본다 — 초안 본문과 공지 내용을 대조하지는 않는다. 의도된 설계다: 활성·scope
+> 일치 공지라도 이 티켓에 실제로 무관할 수 있고, 그때 억지로 본문에 넣게 하면 관련 없는
+> 정보를 끼워넣는 유인이 생긴다(게이트 ④를 인용 필수 인텐트로 한정한 것과 같은 논리).
+> 대신 프롬프트가 "반영하지 않기로 했으면 그 이유를 설명하라"고 지시한다.
+> **한계로 기록**: 모델이 `applied_notices`에 id만 넣고 본문에 아무것도 안 써도 게이트는
+> 통과한다. 이걸 강제하려면 공지 본문과 초안의 의미 대조가 필요한데, 그건 결정론적
+> 게이트가 아니라 judge의 일이다.
 
 거부 시 사유를 도구 응답으로 되돌려 에이전트가 스스로 교정하게 한다(자기교정 루프).
 
@@ -445,7 +455,7 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 | `tone_golden.jsonl` | 30 | 5점 척도(사람) | Phase 6 완료 후 생성된 실제 초안에 직접 라벨링 |
 | `escalation_golden.jsonl` | 40 | `should_escalate` + 해당 조건 ID | E1–E9 각 조건을 재현하는 케이스 + 에스컬레이션 불필요한 대조군 |
 | `retrieval_golden.jsonl` | 30 | 질의 → 정답 조항 번호 | 합성 정책 문서에서 직접 작성 |
-| `notices_golden.jsonl` | 19 | 반영 여부(`expected_grounded_ids`) · 에스컬레이션(E9) | Phase 12a. 활성+scope 일치(반영 필요) / 활성+scope 불일치(반영 금지) / 비활성(만료·`active=false`·TTL 초과) / 조회 실패(필수 인텐트→E9). 전부 결정론적(`is_notice_active` 순수 함수 + stub 소스) — best-effort 구간 없음. 각 행이 자체 공지 레코드와 고정 `as_of` 기준일을 포함해 실행 시점과 무관하게 재현된다 |
+| `notices_golden.jsonl` | 19 | 인지 대상 공지(`expected_grounded_ids`) · 에스컬레이션(E9) | Phase 12a. 활성+scope 일치(반영 필요) / 활성+scope 불일치(반영 금지) / 비활성(만료·`active=false`·TTL 초과) / 조회 실패(필수 인텐트→E9). 전부 결정론적(`is_notice_active` 순수 함수 + stub 소스) — best-effort 구간 없음. 각 행이 자체 공지 레코드와 고정 `as_of` 기준일을 포함해 실행 시점과 무관하게 재현된다 |
 
 > `pii_golden`이 필요한 이유: Bitext는 이미 익명화돼 있어 **마스킹할 실제 PII가 없다.** 🔴 지표를 측정하려면 주입한 테스트셋이 반드시 있어야 한다.
 
@@ -551,6 +561,14 @@ CS 도메인에는 분필에 없던 문제가 있다: **모든 식별자를 마�
 | `SLACK_MCP_TOOL_NAME` | 도구 자동 발견이 틀렸을 때만 지정하는 탈출구 | — |
 | `MCP_NOTIFY_TIMEOUT` | 알림 호출 타임아웃(초) | `5` |
 | `SLACK_BOT_TOKEN` / `SLACK_TEAM_ID` | `xoxb-…` 봇 토큰·워크스페이스 ID — **MCP 서버 컨테이너**가 씀(우리 앱은 안 읽음) | — |
+| `NOTICE_SOURCE` | 라이브 공지 소스(Phase 12) — `noop`/`stub`/`notion`. 미설정(noop)은 기능 비활성이며 **E9가 아니다** | `noop` |
+| `NOTICE_DEFAULT_TTL_DAYS` | `valid_until` 공란 공지의 기본 유효기간(일) | `14` |
+| `NOTICE_MAX_COUNT` / `NOTICE_MAX_BODY_CHARS` | `check_live_notices` 반환 건수·본문 길이 상한(컨텍스트 폭주 방지) | `5` / `500` |
+| `NOTION_MCP_URL` / `NOTION_MCP_TOKEN` | 노션 MCP 서버 엔드포인트(`/mcp` 포함) · 앞단 인증 토큰(Phase 12c) | — |
+| `NOTICE_DB_ID` | 노션 공지 **데이터베이스 ID**(URL의 `?v=` 뒤 뷰 ID가 아니다 — 실측 중 실제로 혼동 발생) | — |
+| `NOTICE_MCP_TIMEOUT` | 공지 조회 타임아웃(초). 루프 안 도구라 턴 예산에 직접 영향 | `8` |
+| `NOTION_DB_TOOL_NAME` / `NOTION_QUERY_TOOL_NAME` | 도구 자동 발견이 틀렸을 때만 지정하는 탈출구 | — |
+| `NOTION_TOKEN` | 노션 통합 토큰 — **MCP 서버 컨테이너**가 씀(우리 앱은 안 읽음) | — |
 
 ---
 
