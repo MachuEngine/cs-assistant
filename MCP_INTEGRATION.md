@@ -97,6 +97,46 @@ initialize 응답 → protocolVersion: "2025-03-26"
 
 ---
 
+## 2b. 노션 MCP 실측 프로브 (Phase 12b, 2026-07-31)
+
+> 범위: 라이브 공지 조회(Phase 12a `NoticeSource`)용 노션 서버 실측. `scripts/probe_notion_mcp.py`로
+> 로컬 컨테이너를 직접 띄워 검증했다. **app/ 코드는 이 단계에서 변경하지 않았다** — 12c에서
+> `notion.py` 어댑터로 결선한다.
+
+**대상**: 공식 `makenotion/notion-mcp-server` (Docker Hub 이미지 `mcp/notion`). Slack과 달리
+공식 서버가 존재해 후보 비교가 필요 없었다.
+
+### 실측 결과 7종
+
+| # | 항목 | 실측값 |
+|---|---|---|
+| 1 | 전송/인증 | ✅ Streamable HTTP + `Authorization: Bearer <정적 토큰>` 그대로 통함. 우리 `MCPClient`(SDK 그대로, 커스텀 어댑터 불필요) — OAuth 강제 아님 |
+| 2 | 프로토콜 세대 | `initialize` 응답 `protocolVersion: "2025-11-25"` (Slack의 `2025-03-26`보다 신세대), `mcp-session-id` 헤더 발급됨(stateful). 설치된 SDK `mcp==1.29.0`(`mcp>=1.28,<2` 핀 내)으로 핸드셰이크·`tools/call` 전부 정상 — **서로 다른 프로토콜 세대라도 우리 SDK 핀 범위 안에서 호환** |
+| 3 | 엔드포인트 경로 | 루트가 아니라 **`/mcp`**(Slack과 동일 패턴) |
+| 4 | 서버 필수 env·실행 인자 | `--transport http --host 0.0.0.0 --port 3000`(기본은 stdio, host는 127.0.0.1만). 인증은 2계층: ① MCP 앞단 `AUTH_TOKEN`(우리 쪽 정적 토큰) ② 노션 API 인증. **② 관련 알려진 버그**: 공식 Docker Hub 이미지(`mcp/notion`)는 `NOTION_TOKEN` env var를 인식 못 함([GitHub #94](https://github.com/makenotion/notion-mcp-server/issues/94), 그 기능 추가 전 빌드) — **`OPENAPI_MCP_HEADERS='{"Authorization": "Bearer ntn_...", "Notion-Version": "2025-09-03"}'`로 우회 확인**. 로컬 빌드(`docker compose build` from repo)라면 `NOTION_TOKEN` 그대로 써도 될 가능성 — 미검증 |
+| 5 | `tools/list` | **24개** 도구, Notion REST API 전체를 감싼 1:1 매핑(읽기/쓰기 다 있음 — 읽기만 쓸 것이므로 `API-retrieve-a-database`/`API-query-data-source`만 사용 예정). 조회 흐름은 **2단계**: `API-retrieve-a-database(database_id)` → 응답의 `data_sources[0].id` → `API-query-data-source(data_source_id)`로 실제 행 조회. **`database_id` 자체로는 행을 못 가져온다** — 2025-09-03+ API가 database(컨테이너)와 data_source(조회 가능한 실제 테이블)를 분리했기 때문(설계 당시엔 이 구분이 반영 안 돼 있었음) |
+| 6 | 응답 모양 | **구조화 JSON**(마크다운 아님). `results[].properties.<name>`이 프로퍼티 타입별 표준 값 객체: `title`/`rich_text`→ rich text 배열(`{type, text:{content}, plain_text, annotations, href}`), `date`→`{start, end, time_zone}`, `multi_select`→`[{id, name, color}]`, `checkbox`→bool. **`body`(Text 프로퍼티)는 `query-data-source` 응답에 바로 포함** — 페이지 본문 블록이 아니라 프로퍼티라 `API-get-block-children` 추가 호출이 필요 없다(12a 설계의 "정규화 형태"와 자연스럽게 맞음). 페이지네이션은 `has_more`/`next_cursor` 필드로 지원(이번 표본 2건이라 미시험) |
+| 7 | latency | 첫 호출(콜드) 1,326ms, 이후 3회 평균 **~85ms**(79/90/86ms). `NOTICE_MCP_TIMEOUT` 기본값은 여유 있게 3~5초 제안(콜드스타트 대비) |
+
+### 부수 발견 — `.env`의 `NOTICE_DB_ID`가 실제 DB와 불일치 (정정 완료)
+
+프로브 중 `API-post-search`로 통합에 공유된 객체를 전수 조회해 발견: 사용자 `.env`에 넣은
+`NOTICE_DB_ID` 값이 실제 공지 DB의 `database_id`와 다른 값이었다(공유 자체는 정상 — 검색으론
+DB·데이터소스·행 2건이 다 보였다). **원인은 URL의 `v=`(view ID) 세그먼트를 `/p/`(page/database
+ID) 대신 복사한 것** — 노션 URL이 `.../p/<database_id>?v=<view_id>` 형태라 흔히 발생하는
+혼동이다. 1차 정정 후에도 값 끝에 `?` 문자가 남아 UUID 검증에 실패했고, 이것까지 제거한 뒤
+**정정 완료 및 재검증 성공**(2026-07-31) — `retrieve-a-database` → `data_sources` 해석 →
+`query-data-source`로 실제 행 2건(6개 프로퍼티 전부 스키마와 일치)을 정상 조회함을 확인했다.
+
+### 12c 진행 가능 여부
+
+**컨테이너 경로가 막히지 않았다** — 12c 진행 가능. 단, 다음을 12c에서 결정/반영해야 한다:
+- `notion.py` 어댑터는 `database_id → data_source_id` 2단계 조회를 구현해야 한다(항목 5)
+- `OPENAPI_MCP_HEADERS` 방식이냐 로컬 빌드로 `NOTION_TOKEN`을 쓰느냐는 배포 방식 결정 필요
+- `NOTICE_MCP_TIMEOUT` 기본값에 콜드스타트 여유를 반영
+
+---
+
 ## 3. 아키텍처 배치 (B)
 
 ### 3.1 레이어 위치
