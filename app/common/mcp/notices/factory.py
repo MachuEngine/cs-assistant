@@ -22,4 +22,8 @@ def get_notice_source() -> NoticeSource:
         from .backends.stub import StubNoticeSource
 
         return StubNoticeSource()
+    if backend == "notion":
+        from .backends.notion import NotionNoticeSource
+
+        return NotionNoticeSource()
     raise NotImplementedError(f"지원하지 않는 NOTICE_SOURCE: '{backend}'")

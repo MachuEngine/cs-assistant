@@ -17,6 +17,7 @@ services:
       - chroma_data:/app/chroma_db
     depends_on:
       - slack-mcp
+      - notion-mcp
 
   # Phase 11 — Slack 에스컬레이션 알림 MCP 서버(MCP_INTEGRATION.md 8.2절,
   # zencoderai/slack-mcp 실측값). MCP_NOTIFIER=noop(기본값)이면 app이 이
@@ -30,6 +31,25 @@ services:
       AUTH_TOKEN: ${SLACK_MCP_TOKEN}  # 고정하지 않으면 기동마다 UUID 자동 생성(실측)
     # [엄수] ports를 열지 않는다 — 이 서버는 앞단 인증이 있긴 하지만(AUTH_TOKEN)
     # 도커 내부 네트워크에서만 접근 가능해야 한다(2중 방어, MCP_INTEGRATION.md 2절).
+    expose:
+      - "3000"
+
+  # Phase 12c — 라이브 공지 조회 MCP 서버(MCP_INTEGRATION.md 2b절, 공식
+  # makenotion/notion-mcp-server 실측값). NOTICE_SOURCE=noop(기본값)이면 app이
+  # 이 서비스를 전혀 호출하지 않는다.
+  notion-mcp:
+    image: mcp/notion
+    # 기본이 stdio라 --transport http가 없으면 HTTP 호출 불가. 기본 host가
+    # 127.0.0.1이라 컨테이너 밖(도커 네트워크)에서 못 붙으므로 0.0.0.0으로 연다
+    # (전부 실측 확인, 2026-07-31).
+    command: ["--transport", "http", "--host", "0.0.0.0", "--port", "3000"]
+    environment:
+      # [실측] 공개 이미지(mcp/notion)는 NOTION_TOKEN env를 인식하지 못한다
+      # (그 기능이 추가되기 전 빌드 — makenotion/notion-mcp-server#94).
+      # OPENAPI_MCP_HEADERS로 우회한다.
+      OPENAPI_MCP_HEADERS: '{"Authorization": "Bearer ${NOTION_TOKEN}", "Notion-Version": "2025-09-03"}'
+      AUTH_TOKEN: ${NOTION_MCP_TOKEN}  # MCP 앞단 인증(우리 클라이언트가 Bearer로 보냄)
+    # [엄수] slack-mcp와 같은 이유로 ports를 열지 않는다.
     expose:
       - "3000"
 

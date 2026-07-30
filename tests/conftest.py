@@ -16,9 +16,17 @@ def _isolate_mcp_env(monkeypatch):
     monkeypatch.delenv("SLACK_MCP_TOKEN", raising=False)
     monkeypatch.delenv("SLACK_ESCALATION_CHANNEL", raising=False)
     monkeypatch.delenv("SLACK_MCP_TOOL_NAME", raising=False)
-    # Phase 12a — 공지 조회도 같은 이유로 격리한다(로컬 .env에 NOTICE_SOURCE=notion
-    # 같은 실제 배포값이 있어도 무관한 테스트가 영향받으면 안 된다).
+    # Phase 12a/12c — 공지 조회도 같은 이유로 격리한다(로컬 .env에 실제 노션
+    # 토큰·DB ID가 들어 있어, 격리하지 않으면 어댑터 단위 테스트가 실제
+    # 네트워크를 때리거나 개발자 환경에 따라 결과가 갈린다).
     monkeypatch.delenv("NOTICE_SOURCE", raising=False)
     monkeypatch.delenv("NOTICE_DEFAULT_TTL_DAYS", raising=False)
     monkeypatch.delenv("NOTICE_MAX_COUNT", raising=False)
     monkeypatch.delenv("NOTICE_MAX_BODY_CHARS", raising=False)
+    monkeypatch.delenv("NOTICE_MCP_TIMEOUT", raising=False)
+    monkeypatch.delenv("NOTICE_DB_ID", raising=False)
+    monkeypatch.delenv("NOTION_MCP_URL", raising=False)
+    monkeypatch.delenv("NOTION_MCP_TOKEN", raising=False)
+    monkeypatch.delenv("NOTION_TOKEN", raising=False)
+    monkeypatch.delenv("NOTION_DB_TOOL_NAME", raising=False)
+    monkeypatch.delenv("NOTION_QUERY_TOOL_NAME", raising=False)
