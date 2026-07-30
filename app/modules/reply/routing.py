@@ -33,6 +33,19 @@ CHECK_CUSTOMER_TIER_REQUIRED = frozenset({
     "delivery_options",
 })
 
+# 라이브 공지 조회(Phase 12a) 필수 인텐트. PROMPTS.md Phase 12 표에서
+# check_payment_methods가 누락된 것을 사람에게 확인해 필수로 추가 확정
+# (2026-07-30) — 원문의 "6개"가 아니라 7개다.
+NOTICE_REQUIRED = frozenset({
+    "delivery_period",
+    "delivery_options",
+    "track_order",
+    "track_refund",
+    "payment_issue",
+    "change_shipping_address",
+    "check_payment_methods",
+})
+
 # 27개 인텐트 → 카테고리 (Bitext 실측, DESIGN.md 4.1절)
 INTENT_TO_CATEGORY = {
     "create_account": "ACCOUNT",
@@ -80,13 +93,17 @@ def requires_check_customer_tier(intent: str) -> bool:
     return intent in CHECK_CUSTOMER_TIER_REQUIRED
 
 
+def requires_live_notices(intent: str) -> bool:
+    return intent in NOTICE_REQUIRED
+
+
 def requires_policy_citation(intent: str) -> bool:
     """save_draft 게이트 ④가 검사하는 대상 — search_policy 필수 인텐트와 동일 집합."""
     return requires_search_policy(intent)
 
 
 # --- 3.1 에스컬레이션 기준 --------------------------------------------------
-# E5~E8은 reply 에이전트 루프(Phase 6) 상태가 있어야 판정 가능해 여기서는
+# E5~E9는 reply 에이전트 루프(Phase 6·12a) 상태가 있어야 판정 가능해 여기서는
 # 사유 라벨만 정의한다. 실제 판정 로직은 app/modules/reply/graph.py에 있다.
 ESCALATION_REASONS = {
     "E1": "triage confidence below threshold",
@@ -97,6 +114,7 @@ ESCALATION_REASONS = {
     "E6": "referenced order could not be found",
     "E7": "save_draft gate failed 3 consecutive times",
     "E8": "retry budget exhausted without passing validation",
+    "E9": "live notice lookup was required for this intent but failed",
 }
 
 OFFENSIVE_FLAG = "W"

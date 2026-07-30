@@ -1,7 +1,6 @@
-"""라이브 공지 조회(Phase 12a) 테스트 — NoticeSource 추상화 + 활성 판정.
+"""라이브 공지 조회(Phase 12a) 테스트 — NoticeSource 추상화 + 활성 판정 + 도구.
 
-전부 monkeypatch/stub — 네트워크 호출 없음. check_live_notices 도구 자체의 테스트는
-reply/tools.py 변경과 함께 커밋된다(다음 커밋). 노션 어댑터는 12c 범위라 여기서
+전부 monkeypatch/stub — 네트워크 호출 없음. 노션 어댑터는 12c 범위라 여기서
 테스트하지 않는다.
 """
 import datetime
@@ -12,6 +11,7 @@ from app.common.mcp.notices import NoticeSource, get_notice_source, is_notice_ac
 from app.common.mcp.notices.backends import stub as notice_stub
 from app.common.mcp.notices.backends.noop import NoopNoticeSource
 from app.common.mcp.notices.backends.stub import StubNoticeSource
+from app.modules.reply import tools as reply_tools
 
 
 @pytest.fixture(autouse=True)
@@ -132,3 +132,91 @@ def test_notice_source_is_abstract():
     with pytest.raises(TypeError):
         NoticeSource()
 
+
+# --- check_live_notices 도구 -------------------------------------------------
+
+def _fresh_session(intent: str):
+    reply_tools.bind_session()
+    reply_tools.init_session(ticket_text="", order_id="", intent=intent)
+
+
+@pytest.mark.asyncio
+async def test_check_live_notices_noop_returns_no_active_notices(monkeypatch):
+    monkeypatch.delenv("NOTICE_SOURCE", raising=False)
+    _fresh_session(intent="delivery_period")
+    result = await reply_tools.check_live_notices.ainvoke({})
+    assert result == "No active live notices."
+    ctx = reply_tools.get_ctx()
+    assert ctx["notices_checked"] is True
+    assert ctx["notice_lookup_failed"] is False
+    assert ctx["active_notices"] == []
+    assert ctx["grounded_notices"] == []
+
+
+@pytest.mark.asyncio
+async def test_check_live_notices_returns_active_scope_agnostic(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([
+        _record(notice_id="N1", scope=["DELIVERY"]),
+        _record(notice_id="N2", scope=["PAYMENT"], title="Card outage", body="Card payments are down."),
+    ])
+    _fresh_session(intent="delivery_period")  # category DELIVERY
+    result = await reply_tools.check_live_notices.ainvoke({})
+    assert "N1" in result and "N2" in result  # 반환은 활성 전부(scope 무관)
+
+    ctx = reply_tools.get_ctx()
+    assert {n["notice_id"] for n in ctx["active_notices"]} == {"N1", "N2"}
+    assert {n["notice_id"] for n in ctx["grounded_notices"]} == {"N1"}  # scope 일치만 grounded
+
+
+@pytest.mark.asyncio
+async def test_check_live_notices_grounded_body_enters_tool_results_log(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([
+        _record(notice_id="N1", scope=["DELIVERY"], body="Shipping delayed 3 days."),
+        _record(notice_id="N2", scope=["PAYMENT"], body="Card outage amount $999 affected."),
+    ])
+    _fresh_session(intent="delivery_period")
+    await reply_tools.check_live_notices.ainvoke({})
+    ctx = reply_tools.get_ctx()
+    log = " ".join(ctx["tool_results_log"])
+    assert "Shipping delayed 3 days." in log
+    assert "$999" not in log  # scope 불일치 공지의 본문은 근거로 승격되지 않는다
+
+
+@pytest.mark.asyncio
+async def test_check_live_notices_sets_failure_flag_and_does_not_raise(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_failure(RuntimeError("timeout"))
+    _fresh_session(intent="delivery_period")
+    result = await reply_tools.check_live_notices.ainvoke({})
+    assert "failed" in result.lower()
+    ctx = reply_tools.get_ctx()
+    assert ctx["notice_lookup_failed"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_live_notices_masks_pii_in_body(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([
+        _record(notice_id="N1", scope=["DELIVERY"], body="Contact ops@northwind.example for details."),
+    ])
+    _fresh_session(intent="delivery_period")
+    result = await reply_tools.check_live_notices.ainvoke({})
+    assert "ops@northwind.example" not in result
+    assert "{{EMAIL}}" in result
+
+
+@pytest.mark.asyncio
+async def test_check_live_notices_respects_count_and_length_caps(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    monkeypatch.setenv("NOTICE_MAX_COUNT", "1")
+    monkeypatch.setenv("NOTICE_MAX_BODY_CHARS", "10")
+    notice_stub.set_notices([
+        _record(notice_id="N1", scope=["DELIVERY"], body="x" * 50),
+        _record(notice_id="N2", scope=["DELIVERY"], body="y" * 50),
+    ])
+    _fresh_session(intent="delivery_period")
+    result = await reply_tools.check_live_notices.ainvoke({})
+    assert "N2" not in result  # 두 번째 공지는 건수 상한에 걸려 반환 문자열에서 잘림
+    assert "xxxxxxxxxx... [truncated]" in result

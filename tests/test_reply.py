@@ -11,10 +11,12 @@ import sqlite3
 
 import pytest
 
+from app.common.mcp.notices.backends import stub as notice_stub
 from app.common.privacy import mask_pii
 from app.modules.reply import tools as reply_tools
 from app.modules.reply import graph as reply_graph
 from app.modules.reply.graph import (
+    agent_node,
     route_after_agent,
     run_reply,
     should_retry,
@@ -220,6 +222,206 @@ def test_validate_draft_format_allows_known_mask_tokens():
         )
     })
     assert result == "Format check passed."
+
+
+# --- 게이트 ⑥: 라이브 공지 반영 누락 (Phase 12a) ------------------------------
+
+def _shipping_notice(**overrides) -> dict:
+    import datetime
+
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    base = {
+        "notice_id": "N1",
+        "title": "Shipping delay",
+        "body": "Shipping is delayed by 3 days this week due to weather.",
+        "scope": ["ORDER"],
+        "valid_from": (today - datetime.timedelta(days=1)).isoformat(),
+        "valid_until": (today + datetime.timedelta(days=365)).isoformat(),
+        "active": True,
+    }
+    base.update(overrides)
+    return base
+
+
+@pytest.fixture(autouse=True)
+def _reset_notice_stub():
+    notice_stub.reset()
+    yield
+    notice_stub.reset()
+
+
+def test_save_draft_gate6_rejects_when_required_intent_never_called_check_live_notices(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    # track_order: NOTICE_REQUIRED이지만 SEARCH_POLICY_REQUIRED는 아니라서
+    # 게이트④(인용 누락)에 가려지지 않고 게이트⑥만 단독으로 검증된다.
+    _fresh_session(intent="track_order")  # NOTICE_REQUIRED, but tool never called
+    result = reply_tools.save_draft.invoke(
+        {"reply_text": f"Your package is on its way as expected. {_DISCLAIMER}"}
+    )
+    assert result.startswith("Rejected")
+    assert "check_live_notices" in result
+
+
+@pytest.mark.asyncio
+async def test_save_draft_gate6_rejects_when_grounded_notice_not_applied(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([_shipping_notice()])
+    _fresh_session(intent="track_order")
+    await reply_tools.check_live_notices.ainvoke({})
+
+    result = reply_tools.save_draft.invoke(
+        {"reply_text": f"Your package will arrive on the originally scheduled date. {_DISCLAIMER}"}
+    )
+    assert result.startswith("Rejected")
+    assert "N1" in result
+
+
+@pytest.mark.asyncio
+async def test_save_draft_gate6_accepts_when_grounded_notice_applied(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([_shipping_notice()])
+    _fresh_session(intent="track_order")
+    await reply_tools.check_live_notices.ainvoke({})
+
+    result = reply_tools.save_draft.invoke({
+        "reply_text": (
+            f"Please note shipping is delayed by 3 days this week. {_DISCLAIMER}"
+        ),
+        "applied_notices": ["N1"],
+    })
+    assert result == "Draft saved."
+    assert reply_tools.get_ctx()["applied_notices"] == ["N1"]
+
+
+@pytest.mark.asyncio
+async def test_save_draft_gate6_tolerates_csv_string_applied_notices(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([_shipping_notice()])
+    _fresh_session(intent="track_order")
+    await reply_tools.check_live_notices.ainvoke({})
+
+    result = reply_tools.save_draft.invoke({
+        "reply_text": f"Please note shipping is delayed by 3 days this week. {_DISCLAIMER}",
+        "applied_notices": "N1, N2",
+    })
+    assert result == "Draft saved."
+    assert reply_tools.get_ctx()["applied_notices"] == ["N1", "N2"]
+
+
+def test_gate_missing_notice_application_rejects_unparseable_value():
+    # 도구 레이어(LangChain @tool의 pydantic 스키마)는 list[str]|str|None 외
+    # 타입을 이미 걸러내므로(agent_node의 try/except가 그 예외를 자기교정
+    # 메시지로 바꿔준다), 순수 파싱 실패 경로는 내부 함수를 직접 호출해 확인한다.
+    _fresh_session(intent="track_order")  # NOTICE_REQUIRED 아님 — 조건①은 무관
+    ctx = reply_tools.get_ctx()
+    result = reply_tools._gate_missing_notice_application(ctx, {"not": "a list or string"})
+    assert result is not None
+    assert "applied_notices" in result
+
+
+@pytest.mark.asyncio
+async def test_save_draft_gate2_rejects_amount_from_scope_mismatched_notice(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([
+        _shipping_notice(notice_id="N2", scope=["PAYMENT"], body="A $75 credit applies to affected accounts."),
+    ])
+    _fresh_session(intent="delivery_period")  # category DELIVERY — scope 불일치
+    await reply_tools.check_live_notices.ainvoke({})
+    assert reply_tools.get_ctx()["grounded_notices"] == []  # scope 불일치라 근거 승격 안 됨
+
+    result = reply_tools.save_draft.invoke({
+        "reply_text": f"You will receive a $75 credit for the delay. {_DISCLAIMER}",
+        "applied_notices": ["N2"],
+    })
+    assert result.startswith("Rejected")
+    assert "$75" in result
+
+
+def test_gate6_noop_is_a_noop(monkeypatch):
+    monkeypatch.delenv("NOTICE_SOURCE", raising=False)  # 기본값 noop
+    _fresh_session(intent="track_order")  # 필수 인텐트, check_live_notices 미호출
+    result = reply_tools.save_draft.invoke(
+        {"reply_text": f"Your package is on its way as expected. {_DISCLAIMER}"}
+    )
+    assert result == "Draft saved."  # noop이면 게이트⑥ 조건①이 적용되지 않는다
+
+
+@pytest.mark.asyncio
+async def test_save_draft_gate6_rejection_message_has_no_notice_body(monkeypatch):
+    monkeypatch.setenv("NOTICE_SOURCE", "stub")
+    notice_stub.set_notices([_shipping_notice(body="SECRET-BODY-TEXT-DO-NOT-LEAK")])
+    _fresh_session(intent="track_order")
+    await reply_tools.check_live_notices.ainvoke({})
+
+    result = reply_tools.save_draft.invoke(
+        {"reply_text": f"Your package will arrive as originally scheduled. {_DISCLAIMER}"}
+    )
+    assert result.startswith("Rejected")
+    assert "N1" in result
+    assert "SECRET-BODY-TEXT-DO-NOT-LEAK" not in result
+
+
+# --- E9 에스컬레이션 우선순위 (E6 > E9 > E5 > E7) ------------------------------
+
+class _FakeNoToolCallResponse:
+    content = ""
+    tool_calls = []
+
+
+class _FakeBoundLLM:
+    async def ainvoke(self, messages):
+        return _FakeNoToolCallResponse()
+
+
+class _FakeLLMBackend:
+    def bind_tools(self, tools):
+        return _FakeBoundLLM()
+
+
+def _agent_state(intent: str, category: str = "DELIVERY") -> dict:
+    return {
+        "ticket": {"text": "hello", "order_id": "", "customer_id": ""},
+        "triage": {"intent": intent, "category": category, "confidence": 0.9, "requires_human": False},
+        "budget": 2,
+        "validation_feedback": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_agent_node_e6_priority_over_e9(monkeypatch):
+    monkeypatch.setattr(reply_graph, "get_llm_backend", lambda: _FakeLLMBackend())
+    _fresh_session(intent="delivery_period")
+    ctx = reply_tools.get_ctx()
+    ctx["order_not_found"] = True
+    ctx["notice_lookup_failed"] = True
+    ctx["escalate_requested"] = True  # 루프를 즉시 끝내기 위한 종료 조건
+
+    result = await agent_node(_agent_state("delivery_period"))
+    assert result["escalation_reason"] == "E6"
+
+
+@pytest.mark.asyncio
+async def test_agent_node_e9_priority_over_e5(monkeypatch):
+    monkeypatch.setattr(reply_graph, "get_llm_backend", lambda: _FakeLLMBackend())
+    _fresh_session(intent="delivery_period")
+    ctx = reply_tools.get_ctx()
+    ctx["notice_lookup_failed"] = True
+    ctx["escalate_requested"] = True
+
+    result = await agent_node(_agent_state("delivery_period"))
+    assert result["escalation_reason"] == "E9"
+
+
+@pytest.mark.asyncio
+async def test_agent_node_e9_not_triggered_for_non_required_intent(monkeypatch):
+    monkeypatch.setattr(reply_graph, "get_llm_backend", lambda: _FakeLLMBackend())
+    _fresh_session(intent="cancel_order")  # NOTICE_REQUIRED 아님
+    ctx = reply_tools.get_ctx()
+    ctx["notice_lookup_failed"] = True  # 방어적 조건 — 무관해야 함
+    ctx["escalate_requested"] = True
+
+    result = await agent_node(_agent_state("cancel_order", category="ORDER"))
+    assert result["escalation_reason"] == "E5"
 
 
 # --- validate_node / 라우팅 (순수 함수, 모델 호출 없음) --------------------

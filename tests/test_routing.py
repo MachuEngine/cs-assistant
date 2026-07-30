@@ -3,8 +3,11 @@ import pytest
 from app.modules.reply.routing import (
     ALL_CATEGORIES,
     ALL_INTENTS,
+    ESCALATION_REASONS,
+    NOTICE_REQUIRED,
     check_pre_agent_escalation,
     requires_check_customer_tier,
+    requires_live_notices,
     requires_lookup_order,
     requires_policy_citation,
     requires_search_policy,
@@ -131,3 +134,38 @@ def test_default_threshold_is_070(monkeypatch):
     monkeypatch.delenv("TRIAGE_CONFIDENCE_THRESHOLD", raising=False)
     assert check_pre_agent_escalation("cancel_order", 0.69, "B") == "E1"
     assert check_pre_agent_escalation("cancel_order", 0.70, "B") is None
+
+
+# --- 라이브 공지 조회(Phase 12a) ---------------------------------------------
+
+def test_notice_required_has_exactly_seven_intents():
+    # PROMPTS.md 원문의 6개에 check_payment_methods를 사람이 필수로 추가 확정
+    # (2026-07-30) — 이 테스트가 그 집합의 정확한 구성을 회귀로부터 지킨다.
+    assert NOTICE_REQUIRED == {
+        "delivery_period", "delivery_options", "track_order", "track_refund",
+        "payment_issue", "change_shipping_address", "check_payment_methods",
+    }
+
+
+@pytest.mark.parametrize(
+    "intent,expected",
+    [
+        ("delivery_period", True),
+        ("delivery_options", True),
+        ("track_order", True),
+        ("track_refund", True),
+        ("payment_issue", True),
+        ("change_shipping_address", True),
+        ("check_payment_methods", True),
+        ("cancel_order", False),
+        ("create_account", False),
+        ("place_order", False),
+    ],
+)
+def test_requires_live_notices(intent, expected):
+    assert requires_live_notices(intent) is expected
+
+
+def test_e9_label_present_and_english():
+    assert "E9" in ESCALATION_REASONS
+    assert ESCALATION_REASONS["E9"].isascii()

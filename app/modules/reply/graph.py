@@ -19,6 +19,7 @@ from langgraph.graph import END, START, StateGraph
 from app.common.llm import get_judge_backend, get_llm_backend
 
 from .judge import judge_reply
+from .routing import requires_live_notices
 from .state import ReplyState
 from .tools import TOOLS, bind_session, get_ctx, init_session
 
@@ -149,7 +150,7 @@ async def agent_node(state: ReplyState) -> dict:
                 result_content = f"Unknown tool: {tc['name']}"
             else:
                 try:
-                    result_content = str(fn.invoke(tc["args"]))
+                    result_content = str(await fn.ainvoke(tc["args"]))
                 except Exception as e:
                     result_content = f"Tool call error — check argument types and retry: {e}"
             messages.append(ToolMessage(content=result_content, tool_call_id=tc["id"]))
@@ -173,9 +174,14 @@ async def agent_node(state: ReplyState) -> dict:
     # order_not_found(E6)는 lookup_order가 실제로 확인한 결정론적 사실이라,
     # 에이전트가 그 사실을 이유로 스스로 escalate_to_human까지 호출해 둘 다
     # True인 경우에도 더 구체적인 근본 원인인 E6을 우선한다(2026-07-28 확인:
-    # 두 플래그가 함께 서는 사례가 실제로 존재함).
+    # 두 플래그가 함께 서는 사례가 실제로 존재함). E9(공지 조회 필수 실패)도
+    # 같은 논리로 E6 다음, E5/E7보다는 앞선 우선순위를 준다(Phase 12a,
+    # E6 > E9 > E5 > E7).
     if ctx["order_not_found"]:
         updates["escalation_reason"] = "E6"
+        updates["outcome"] = "escalated"
+    elif requires_live_notices(ctx["intent"]) and ctx.get("notice_lookup_failed", False):
+        updates["escalation_reason"] = "E9"
         updates["outcome"] = "escalated"
     elif ctx["escalate_requested"]:
         updates["escalation_reason"] = "E5"
