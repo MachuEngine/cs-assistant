@@ -129,11 +129,14 @@ evals/golden/     evals/runners/     data/raw/     .env
 ## 모듈별 주의사항
 
 - **reply 모듈**: LangGraph 노드 순서(`plan → agent → judge → validate`) 변경 시 반드시 설계 단계 승인. `judge`는 **도구가 아니라 그래프 노드**이며 생성과 다른 백엔드를 호출한다 — 도구로 되돌리지 말 것
-- **reply/tools.py**: 모든 도구는 **LLM 호출 없이** 순수 계산·검색·저장만. 도구 안에 LLM을 중첩하지 말 것
+- **reply/tools.py**: 모든 도구는 **LLM 호출 없이** 순수 계산·검색·저장만. 도구 안에 LLM을 중첩하지 말 것. MCP 호출은 **부작용 유무**로 가른다 — 읽기·멱등(공지 조회 등)은 이 파일 안에 도구로 넣어도 되지만, 쓰기·부작용 있는 MCP(Slack 알림 등)는 여기 넣지 않는다(아래 common/mcp 항목 참고)
 - **`save_draft` 게이트 5종**: ① **마스킹되지 않은 원본** PII 패턴 출현(마스킹 토큰 자체는 허용) ② 도구 결과에 없는 금액·날짜·환불 확약 ③ 금지 표현 블랙리스트 ④ 정책 인용 필수 인텐트인데 인용 0건 ⑤ 상담원 최종 책임 고지 문구 누락(모델이 프롬프트 지시를 빼먹는 경우가 실측됨 — 프롬프트만 믿지 않고 게이트로 강제). 임의로 완화하지 말 것. 거부 시 사유를 도구 응답으로 되돌려 에이전트가 자기교정하게 한다
 - **에스컬레이션**: `escalated`는 실패가 아니라 정상 종료 상태다. 조건 E1–E8은 전부 **코드**가 판정한다(DESIGN.md 3.1절). budget 소진 시 미달 초안을 그냥 내보내지 말 것 — **초안이 없는 것이 잘못된 초안보다 낫다**
 - **judge.py**: 출력 스키마 고정 — `{policy_compliance:1-5, tone:1-5, violations[], reasoning}`. 통과 조건은 `policy≥4 AND tone≥4 AND high severity 0건`. 루브릭 텍스트는 `prompts/judge_*.md`에 두고 변경 시 단독 커밋
 - **triage 모듈**: 에이전트를 쓰지 않는다(단일 호출 + structured output). "여기에도 ReAct를 넣자"는 제안 금지. 인텐트 **27개 / 카테고리 11개**(`ACCOUNT` `CANCEL` `CONTACT` `DELIVERY` `FEEDBACK` `INVOICE` `ORDER` `PAYMENT` `REFUND` `SHIPPING` `SUBSCRIPTION`) — Bitext 라벨을 임의로 재정의하지 말 것 (DESIGN.md 4.1절 실측표 참고)
 - **common/llm**: 새 백엔드 추가 시 `factory.py`와 `.env.example` 양쪽 갱신
 - **chat_runpod 어댑터**: 변경 시 로컬 Ollama로 먼저 검증 후 RunPod 적용. `/run` 제출 후 **동일 job_id를 폴링**할 것 — 재제출은 중복 실행이 된다
-- **common/mcp(Phase 11, 에스컬레이션 알림)**: MCP 호출을 **`reply/tools.py`에 넣지 말 것** — 도구는 순수 계산만이라는 규칙과 충돌하고, 도구는 동기 호출이며 재시도 루프 안이라 중복 발송 위험이 있다. 호출은 항상 `app/main.py`(서비스 계층)에서만. **fail-soft**가 계약이다(LLM 백엔드의 fail-fast와 의도적으로 반대) — 알림 실패가 `outcome=failed`로 뒤집으면 안 된다. 알림 페이로드에 티켓 본문·초안·`customer_id`를 절대 넣지 말 것(하드룰 3). 도구 이름은 하드코딩하지 말고 `tools/list`로 발견할 것 — 설계·실측 근거는 `MCP_INTEGRATION.md`
+- **common/mcp**: MCP 호출을 루프 안에 넣을지는 **부작용 유무**로 가른다(2026-07-30 개정 — 이전에는 "MCP는 무조건 tools.py 밖"이었으나, 읽기 전용 도구가 등장하며 근거가 사라졌다).
+  - **쓰기·부작용 있는 MCP** (예: Slack 에스컬레이션 알림, Phase 11): **`reply/tools.py`에 넣지 말 것** — 도구는 순수 계산만이라는 규칙과 충돌하고, 재시도 루프 안에서 부르면 중복 발송 위험이 있다. 호출은 항상 `app/main.py`(서비스 계층)에서만. **fail-soft**가 계약이다(LLM 백엔드의 fail-fast와 의도적으로 반대) — 알림 실패가 `outcome=failed`로 뒤집으면 안 된다. 알림 페이로드에 티켓 본문·초안·`customer_id`를 절대 넣지 말 것(하드룰 3)
+  - **읽기·멱등 MCP** (예: 라이브 공지 조회, Phase 12): 재시도돼도 부작용이 없으므로 `reply/tools.py`에 도구로 넣고 ReAct 루프 안에서 자율 호출하게 해도 된다. 단 계약은 **fail-fast** — 조회 실패를 조용한 빈 리스트로 삼키면 "공지 없음"과 "조회 실패"가 구분 안 돼 조용히 틀린 답이 나간다
+  - 공통: 도구 이름은 하드코딩하지 말고 `tools/list`로 발견할 것 — 설계·실측 근거는 `MCP_INTEGRATION.md`
