@@ -14,6 +14,7 @@ DESIGN.md 6.1/6.2절이 단일 출처다.
 | `escalation_golden.jsonl` | 40 | 완료 (E1~E4/E6+대조군 30건 결정론적, E5/E7/E8 10건 best-effort) |
 | `retrieval_golden.jsonl` | 32 | 완료 (실제 조항 30개 전수 커버 + 복수정답 질의 2건 — DESIGN.md는 "28개"로 추정했으나 실측 30개, 아래 참고) |
 | `tone_golden.jsonl` | 40/40 | 완료 — 실제 auto_draft 30건 + 나쁜/중간 톤 손수 작성 10건, 전부 사람 라벨링(2026-07-29~30) |
+| `notices_golden.jsonl` | 19 | 완료 (Phase 12a) — 활성+scope 일치 5 / 활성+scope 불일치 5 / 비활성(만료·`active=false`·TTL초과) 5 / 조회 실패(필수→E9 2, 선택→계속 2). 전부 결정론적(`is_notice_active` 순수 함수 + stub) — best-effort 구간 없음 |
 
 > **정정**: DESIGN.md 6.3절 작성 시점에 참고한 조항 수 추정(28개)이 실측(30개)과 달랐다. `retrieval_golden`은 실측 30개 기준으로 전수 커버되도록 만들었다 — 정답셋을 실측에 맞춰 조정한 것이라 별도 사람 승인 없이 진행(수치 근거는 `parse_policy_doc()` 실행 결과, 문서 임계값을 낮춘 게 아니라 골든셋 커버리지를 오히려 늘린 경우).
 
@@ -171,6 +172,41 @@ Judge(실 API)와의 신뢰도를 측정했다.
 **결론**: κ=0.466으로 게이트 기준(0.4)을 통과했다. 다만 이건 "영원히 검증 완료"가 아니라
 이번 40건 표본·이번 루브릭 버전에서의 측정치다 — 향후 톤 관련 프롬프트나 생성 모델이 바뀌면
 재측정이 필요하다.
+
+## 라이브 공지 조회 (Phase 12a, 2026-07-30) — noop/stub 기반 코어 검증
+
+`run_notices.py`(`evals/runners/`는 보호 경로라 정식 반영 전까지 스크래치 디렉터리에 초안만
+둠 — 사람이 정식화할 때 경로 결정 필요)로 `notices_golden.jsonl` 19건 전체(`--full`)를 실행:
+
+| 지표 | 값 |
+|---|---|
+| 도구 호출률(`check_live_notices` 실제 조회) | 1.0 (19/19) |
+| 반영 정확도(골든의 고정 `as_of` 기준, 재현 가능) | **1.0** (19/19) |
+| 게이트⑥ 발동 건수 | 1/19 — 나머지 활성+scope 일치 4건은 게이트④(인용 누락)가 먼저 걸려 게이트⑥까지 도달하지 못함(테스트용 초안 문구가 인용을 안 넣었기 때문 — 실제 배포에서는 프롬프트가 인용도 함께 요구하므로 두 게이트가 동시에 걸리는 경우가 정상) |
+| 에스컬레이션(E9) 정확도 | 1.0 (2/2 필수 인텐트 조회 실패 → E9, 2/2 선택 인텐트는 계속 진행) |
+
+**알려진 한계**: `check_live_notices`는 활성 판정에 항상 실제 UTC 오늘을 쓴다(`today` 오버라이드
+없음) — golden의 고정 `as_of`(2026-08-01)와 실제 실행 시점이 멀어지면 "도구를 그대로 호출한"
+측정치(`live_today`)는 재현되지 않는다. 위 표의 "반영 정확도"는 `is_notice_active(notice,
+today=as_of)`를 직접 호출해 재현 가능하게 계산한 값이고, 실제로 이 간극을 실측 데이터 1건
+(`NOTICE-011`, 만료 케이스)에서 확인했다 — 실제 실행 시점(2026-07-30)이 아직 그 공지의
+`valid_until`(2026-07-31)을 지나지 않아 도구는 활성으로 봤지만, golden의 고정 기준일로는
+이미 만료였다. **12b/12c로 넘어가기 전, `NoticeSource`나 `check_live_notices` 경계에 `today`
+오버라이드를 추가할지 사람이 결정해야 한다.**
+
+**첫 사이클은 리포트만** — PROMPTS.md Phase 12a 지시대로 `check_thresholds.py`에 아직 게이트로
+넣지 않았다.
+
+**stub 기반 before/after (프로덕션 백엔드, `LLM_BACKEND=anthropic` claude-sonnet-5 /
+`JUDGE_BACKEND=openai` gpt-5.6-luna, 2026-07-30)**: 동일 배송문의 티켓(`delivery_period`,
+"package arrival" 문의)을 공지 꺼짐/켜짐 두 상태로 `run_reply()` 전체 파이프라인에 각각 1회
+실행. 공지가 꺼진 상태의 초안은 표준 배송 소요일만 언급했고, 공지가 켜진 상태(지역 캐리어
+장애로 2–3일 지연)의 초안은 `[N-SHIP-01]`을 실제로 인용하며 지연 가능성을 명시적으로 안내—
+같은 파이프라인·같은 티켓에서 이 도구가 초안 내용을 실제로 바꾼다는 것을 확인했다(장식이 아님).
+
+게이트⑥이 실제로 거부하는 사례(notice_id만, 본문 없음)도 별도로 재현:
+`Rejected — active notice(s) matching this ticket's category were not acknowledged in
+applied_notices: ['N-SHIP-01'].`
 
 ## 미측정 지표 (알려진 공백)
 
