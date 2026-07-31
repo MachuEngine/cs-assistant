@@ -6,6 +6,14 @@
 
 app.modules.triage.classifier.triage_ticket()을 실제로 호출한다(고정
 출력을 채점하지 않는다 — CLAUDE.md 평가 규칙).
+
+[2026-08-01 수정] classify_ticket()은 모델이 27개 인텐트 밖의 값을 반환하면
+fail-fast로 ValueError를 던진다(의도된 설계 — app/modules/triage/classifier.py
+41-44줄). 이 자체는 정당하지만, 이 러너가 그 예외를 못 잡아서 --full(200건)
+도중 한 건만 실패해도 전체가 죽고 그때까지의 API 비용이 리포트 없이 날아갔다
+(실측: 98/200에서 크래시, 97건 비용 소실). 한 건의 분류 실패를 정확도 분모에
+포함되는 '오답'으로 기록하고 계속 진행하도록 고친다 — 조용히 빼서 정확도를
+부풀리지 않는다(evals/runners 임계값을 완화하지 않는다는 원칙과 같은 이유).
 """
 import asyncio
 import collections
@@ -59,9 +67,28 @@ async def main() -> None:
     confidences_correct, confidences_wrong = [], []
     confusion = collections.Counter()
     errors = []
+    classifier_failures = []  # 모델이 유효하지 않은 값을 반환해 fail-fast한 건들
 
     for i, row in enumerate(sample, start=1):
-        result = await triage_ticket(row["text"], row.get("flags", ""))
+        try:
+            result = await triage_ticket(row["text"], row.get("flags", ""))
+        except Exception as e:
+            # [엄수] 조용히 건너뛰지 않는다 — 정확도 분모에는 오답으로 포함시키고
+            # (실패를 빼서 수치를 부풀리지 않는다), 원인 진단용으로 별도 기록한다.
+            classifier_failures.append({
+                "ticket_id": row["ticket_id"], "true_intent": row["intent"],
+                "error": f"{type(e).__name__}: {e}",
+            })
+            y_true_intent.append(row["intent"])
+            y_pred_intent.append("__classifier_error__")
+            y_true_cat.append(row["category"])
+            y_pred_cat.append("__classifier_error__")
+            confidences_wrong.append(0.0)
+            confusion[(row["intent"], "__classifier_error__")] += 1
+            print(f"[{i}/{len(sample)}] {row['ticket_id']} true={row['intent']!r} "
+                  f"ERROR: {type(e).__name__}: {e}")
+            continue
+
         y_true_intent.append(row["intent"])
         y_pred_intent.append(result["intent"])
         y_true_cat.append(row["category"])
@@ -105,12 +132,15 @@ async def main() -> None:
         "confusion_matrix": {f"{t}->{p}": c for (t, p), c in confusion.items()},
         "per_intent": per_label,
         "errors": errors,
+        "classifier_failures": classifier_failures,
+        "classifier_failure_count": len(classifier_failures),
     }
     path = write_report("run_triage", report)
 
     print(f"\nintent_accuracy={intent_acc:.3f} macro_f1={macro_f1:.3f} category_accuracy={cat_acc:.3f}")
     print(f"confidence(correct)={avg_conf_correct} confidence(wrong)={avg_conf_wrong}")
     print(f"인접 인텐트 쌍 혼동: {adjacent_pair_confusions}")
+    print(f"분류기 실패(유효하지 않은 값 반환): {len(classifier_failures)}건")
     print(f"리포트 저장: {path}")
 
 

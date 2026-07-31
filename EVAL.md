@@ -300,6 +300,73 @@ applied_notices: ['N-SHIP-01'].`
 않았다 — "카드사에 문의해보라" 류의 일반 안내까지 근거를 요구하는 기존 judge 엄격성
 경향(위 2026-07-29 "부수 관찰" 항목)과 같은 계열로 보인다. 공지 기능과는 무관하다.
 
+## `--full` 전체 eval 최초 실행 (2026-08-01, 프로덕션 백엔드)
+
+`scripts/run_full_eval.sh`로 6개 러너 전부 `--full`(전수) 실행. 처음으로 스모크셋
+(`--sample 20`)이 아니라 골든셋 전체로 측정한 결과다.
+
+| 러너 | 핵심 지표 | 값 | 기준 | 판정 |
+|---|---|---|---|---|
+| `run_pii` | fn_rate | 0.0 | ==0 | PASS |
+| `run_retrieval` | recall@5 / MRR | 1.0 / 0.935 | ≥0.8 | PASS (한계는 README 각주 그대로) |
+| `run_triage` | intent_accuracy / macro_f1 / category_accuracy | 0.915 / 0.913 / **0.960** | 0.85 / 0.80 / 0.92 | 전부 PASS |
+| `run_judge_reliability` | cohens_kappa / within_one | 0.424 / 0.975 | ≥0.4 | PASS |
+| `run_policy_violation` | judge_overall_recall | **0.58** | ≥0.95 | **FAIL** — 아래 참고 |
+| `run_escalation` | precheck_accuracy(E1-E4) / e6_recall / control_fp_rate / best_effort_recall | 1.0 / 1.0 / **0.6** / 0.7 | — / — / 참고값 / 참고값 | 아래 참고 |
+
+**`category_accuracy` 0.92 미달 우려 해소**: 스모크셋의 0.900이 20건 표본 노이즈였다는
+게 확인됐다 — 200건 전수로는 0.960. `NEXT_STEPS.md` 우선순위 1의 확인 사항이었다.
+
+**오답 17건은 무작위가 아니라 DESIGN.md 6.1절이 예상한 그 패턴 그대로다**:
+`change_shipping_address↔set_up_shipping_address`(3건), `get_invoice↔check_invoice`
+(2건) — 의미가 인접한 인텐트 쌍에서 국소적으로 붕괴한다는 macro-F1 도입 근거가
+실측으로 확인됐다. `place_order`가 낮은 confidence(0.3)로 `contact_*`로 새는 케이스도
+3건 있었는데, confidence가 낮다는 건 모델 스스로도 확신이 없었다는 뜻이라 E1로
+사람에게 넘어갈 티켓들이다.
+
+### 발견 1 — Judge가 `policy_contradiction` 유형을 사실상 못 잡는다(recall 0.0)
+
+스모크셋(20건)에서는 "3건 놓침, 유형 경계 모호"로 넘겼던 사안인데, 50건 전수로 보니
+훨씬 크다:
+
+```
+judge_per_type_recall:
+  unsupported_commitment: 0.9
+  policy_contradiction:   0.0   ← 이 유형으로 심어둔 위반 15건이 전부 다른 유형으로 분류됨
+  missing_citation:       0.8
+  out_of_scope_promise:   0.6
+```
+
+`policy_contradiction`으로 심어둔 위반 15건 전부를 Judge가 `unsupported_commitment`로
+분류했다(`misses` 상세, `evals/reports/run_policy_violation.json`). **그러나
+`gate_recall_for_covered_types: 1.0`** — 결정론적 게이트(②/④)가 이 위반들을 전부
+(다른 이유로든) 실제로 잡아낸다. 즉 **초안이 새나간 적은 없고, Judge의 위반 유형
+라벨링만 체계적으로 어긋난다.**
+
+**골든셋 문제로 보이지 않는다**: `unsupported_commitment`(0.9)·`missing_citation`(0.8)은
+Judge가 잘 구분하는데 유독 `policy_contradiction`만 0.0이라, 루브릭이 이 유형을
+`unsupported_commitment`와 구분할 만큼 명확하게 정의를 못 하고 있을 가능성이 높다.
+**결정하지 않고 보고만 한다** — 루브릭(`prompts/judge_*.md`) 수정 여부는 사람 판단
+사항이고, 판정에 주관성이 섞인 영역이라 CLAUDE.md 워크플로우상 독립 리뷰
+(eval-reviewer)를 거쳐야 한다.
+
+### 발견 2 — `control_fp_rate` 0.6 중 일부는 로컬 환경 artifact, 일부는 진짜
+
+대조군(에스컬레이션 불필요) 5건 중 3건이 에스컬레이션됐다:
+
+| golden_id | 티켓 | 사유 | 원인 |
+|---|---|---|---|
+| ESC-026 | 환불 상태 문의(`track_refund`) | E9 | **로컬 환경 artifact** — `.env`의 `NOTICE_SOURCE=notion`이 도커 밖에서 실행 중이라 `notion-mcp` 호스트명이 안 풀려 공지 조회가 항상 실패함(진짜 로직 결함 아님) |
+| ESC-027 | "opening new gold account for daughter"(`create_account`) | E5 | **진짜 결과** — 에이전트가 스스로 에스컬레이션 |
+| ESC-029 | "editing data on premium account"(`edit_account`) | E5 | **진짜 결과** — 동일 |
+
+ESC-026을 빼도 대조군 FP율은 2/5=0.4로 여전히 낮지 않다. ESC-027/029는 둘 다 ACCOUNT
+카테고리라 정책 인용이 필요 없는 단순 절차 티켓인데, "가족 대신 계정을 열어달라"·
+"프리미엄 계정 정보 수정" 같은 신원·권한이 걸릴 수 있는 문구 때문에 에이전트가 보수적으로
+판단한 것으로 보인다 — 버그인지 적절한 보수성인지는 해석이 갈려 **결정하지 않고
+보고만 한다**. 다음 `--full` 재실행 전 `.env`의 `NOTICE_SOURCE`를 `noop`으로 되돌리면
+ESC-026 쪽 노이즈는 제거하고 순수하게 이 문제만 재측정할 수 있다.
+
 ## 미측정 지표 (알려진 공백)
 
 - **톤 평균 ≥4.0** (DESIGN.md 6.2 🟡): `tone_golden`이 라벨링 전이라 측정 불가. 별도로,
