@@ -53,7 +53,7 @@
 | 에스컬레이션 E1~E9 (전부 코드가 판정) | ✅ 완료 |
 | **라이브 공지 조회 (`check_live_notices`, Phase 12)** | ✅ 완료 — 노션 MCP 실측·어댑터 결선까지 (읽기 전용, 루프 안 도구) |
 | RAG (ChromaDB + BGE-M3 + BGE-reranker, 전부 CPU) | ✅ 완료 |
-| 평가 체계 (골든셋 7종 431건 + 러너 6종 + 초안 러너 1종) | ✅ 완료 (스모크셋 기준) |
+| 평가 체계 (골든셋 7종 431건 + 러너 7종) | ✅ 완료 (스모크셋 기준) |
 | **Judge 신뢰도 κ ≥ 0.4** | ✅ 달성 (0.466 — [품질 평가](#품질-평가)) |
 | 커스텀 어댑터 (RunPod `BaseChatModel` 상속) | ✅ 코드 완료 · ⏸️ 실 엔드포인트 미검증 |
 | 상담원 검토 UI (Next.js + SSE) | ✅ 완료 |
@@ -62,7 +62,8 @@
 | 배포 구성 (Docker + Compose + Caddy HTTPS) | ✅ 구성 완료 · ⏸️ 실 클라우드 VM 미배포 |
 | 전체 eval (`--full`) | ⬜ 미실행 ([남은 과제](#남은-과제)) |
 
-테스트 **215개 전부 통과** (`pytest tests/ -x -q`).
+테스트 **221개 통과** (`pytest -q -m "not rag and not llm_live"` — CI가 매 PR에서 도는 경량 스위트).
+전체 수집은 229개이고, 나머지 8개는 임베딩 모델 로드(`rag`)나 로컬 Ollama(`llm_live`)가 필요해 별도 실행합니다.
 
 ### 시스템 구성도
 
@@ -336,7 +337,7 @@ CS 도메인에는 교육 도메인에 없던 문제가 하나 있습니다 — 
 > 지표 전체 목록·골든셋 현황·실행 이력은 [EVAL.md](./EVAL.md)에서 계속 갱신합니다. 아래는 스냅샷입니다.
 > **⚠️ 측정 모델이 지표별로 다릅니다** — 아래 표에 명시했습니다. 아직 **`--sample 20` 스모크셋 기준**이며 `--full`은 미실행([남은 과제](#남은-과제)).
 
-### 골든셋 6종 (412건, 전부 `evals/golden/*.jsonl` 외부화)
+### 골든셋 7종 (431건, 전부 `evals/golden/*.jsonl` 외부화)
 
 | 파일 | 건수 | 구성 |
 |---|---|---|
@@ -346,6 +347,7 @@ CS 도메인에는 교육 도메인에 없던 문제가 하나 있습니다 — 
 | `escalation_golden.jsonl` | 40 | E1~E4/E6+대조군 30건 결정론적 · E5/E7/E8 10건 best-effort |
 | `retrieval_golden.jsonl` | 32 | 실제 조항 30개 전수 커버 + 복수정답 질의 2건 |
 | `tone_golden.jsonl` | 40 | 실제 `auto_draft` 30건 + 나쁜/중간 톤 손수 작성 10건 (전부 사람 라벨) |
+| `notices_golden.jsonl` | 19 | 활성+scope일치 5 · scope불일치 5 · 비활성 5 · 조회실패 4 (전부 결정론적) |
 
 ### 답변 초안 — 실제 프론티어 모델 (생성 `claude-sonnet-5` / Judge `gpt-5.6-luna`, 2026-07-29~30)
 
@@ -478,10 +480,11 @@ This is the third time my order has been late and I want compensation
 ### 4. 테스트 · 평가
 
 ```bash
-pytest tests/ -x -q                                    # 185개, 모델 호출 없음
+pytest -q -m "not rag and not llm_live"                 # 221개, 모델 호출 없음
 
 .venv/bin/python evals/runners/run_triage.py --sample 20        # 스모크셋
 .venv/bin/python evals/runners/run_judge_reliability.py --sample 40
+.venv/bin/python evals/runners/run_notices.py --sample 20       # 라이브 공지(19건 전수)
 ```
 
 > `--full`은 훅이 차단합니다 — 비용과 변동성 때문에 **사람이 직접** 실행합니다.
@@ -527,6 +530,7 @@ docker compose up -d --build     # app + frontend + slack-mcp + notion-mcp
 | **`--full` 규모 전체 eval 6종** | ⬜ 미실행 | 훅이 자동 실행을 차단 — 사람이 직접. 특히 `category_accuracy` 0.900(기준 0.92)이 표본 노이즈인지 확인 필요 |
 | Judge 위반 검출 recall 0.85 처리 방침 | ⏸️ 사람 판단 대기 | 골든셋 유형 경계 문제로 결론 — 유형 통합 여부는 사람이 결정 |
 | 톤 평균 / 위반 F1 / PII FP율 / 과정 지표 | ⬜ 미측정 | `--full` 실행 시 부가 측정 |
+| 라이브 공지 지표 게이트화 | ⏸️ 보류 | 첫 사이클은 리포트만(`grounded_accuracy` 1.0 / 게이트⑥ 5/5). 2~3회 이력 후 `check_thresholds.py` 편입 여부를 사람이 결정 |
 | RunPod 실제 엔드포인트 e2e | ⏸️ 보류 | `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` 미설정 (코드·테스트는 완료) |
 | 실제 클라우드 VM 배포 (공개 HTTPS URL) | ⏸️ 보류 | 실 클라우드 계정 필요 |
 
@@ -586,10 +590,10 @@ cs-assistant/
 │   └── synthetic/        # 합성 정책 문서 + shop.db
 ├── evals/
 │   ├── golden/           # ★보호 경로 — 골든셋 7종 JSONL
-│   ├── runners/          # ★보호 경로 — 러너 6종 + check_thresholds.py
+│   ├── runners/          # ★보호 경로 — 러너 7종 + check_thresholds.py
 │   └── reports/          # 실행 결과 JSON
 ├── scripts/              # 데이터 준비 · 인덱싱 · 골든셋 생성
-├── tests/                # pytest 185개 (모델 호출 없음)
+├── tests/                # pytest 229개 (경량 221 + rag/llm_live 8)
 ├── .claude/
 │   ├── hooks/            # PreToolUse 훅 4종 (Python stdlib만)
 │   ├── rules/            # 규칙 모듈 (prompt-change / dev-loop / eval-integrity)

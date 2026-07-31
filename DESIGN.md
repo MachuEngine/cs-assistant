@@ -626,19 +626,37 @@ app/common/llm/
 
 파이프라인 코드에서 `ChatAnthropic`을 **직접 import 하지 않는다.** 항상 `app/common/llm/` 인터페이스를 경유한다. 이 규칙이 깨지면 벤더 전환 실험 자체가 불가능해진다.
 
-### MCP 연동 — 세 번째 벤더 판단 사례 (Phase 11)
+### MCP 연동 — 세 번째 벤더 판단 사례 (Phase 11·12)
 
-Slack 에스컬레이션 알림은 **표준 프로토콜(MCP)이 있고 공식 SDK도 있는** 경우다 — 위
-판단 기준표에서 "정식 지원으로 충분" 쪽에 가깝지만, RunPod과 달리 표준화된 프로토콜
-자체(공식 SDK)를 직접 다루는 게 정식 경로라는 점이 다르다. 반면 "Slack MCP 서버"는
-공식 단일 구현이 없고 커뮤니티 구현마다 도구 이름·인자가 갈린다(조사 3종 비교,
-`MCP_INTEGRATION.md` 2절) — 그래서 도구를 하드코딩하지 않고 `tools/list`로 **매번
-발견**한다. 벤더 고정(RunPod처럼 한 곳에 맞춰 어댑터를 짬)과 프로토콜 발견(MCP처럼
-런타임에 상대를 알아내야 함) 둘 다 이 프로젝트에서 실제로 다뤄본 셈이다.
+MCP는 **표준 프로토콜이 있고 공식 SDK도 있는** 경우다 — 위 판단 기준표에서 "정식
+지원으로 충분" 쪽에 가깝지만, RunPod과 달리 표준화된 프로토콜 자체(공식 SDK)를 직접
+다루는 게 정식 경로라는 점이 다르다. 벤더 고정(RunPod처럼 한 곳에 맞춰 어댑터를 짬)과
+프로토콜 발견(MCP처럼 런타임에 상대를 알아내야 함) 둘 다 이 프로젝트에서 실제로
+다뤄본 셈이다.
 
-설계·실측 검증 전체는 `MCP_INTEGRATION.md` 참고 — 대상 서버 컨테이너를 실제로 띄워
-`initialize → tools/list → tools/call` 전 구간과 실제 Slack 발송까지 확인했다
-(2026-07-29).
+**두 번 붙였고, 성격이 정반대라 배치도 정반대가 됐다.**
+
+| | Slack 알림 (Phase 11) | Notion 공지 (Phase 12) |
+|---|---|---|
+| 성격 | **쓰기 · 부작용 있음** | **읽기 · 멱등** |
+| 배치 | 루프 **밖** — `app/main.py` 서비스 계층 | 루프 **안** — `reply/tools.py` 9번째 도구 |
+| 호출 주체 | **코드**(결정론적, 에스컬레이션 확정 4지점) | **에이전트**(자율 판단) |
+| 실패 계약 | **fail-soft** — 알림 실패가 판정을 뒤집으면 안 된다 | **fail-fast** — 조회 실패를 빈 결과로 삼키면 조용히 틀린 답이 나간다 |
+| 실패의 결과 | 로그만 남고 계속 | 필수 인텐트면 **E9 에스컬레이션** |
+
+원래 규칙은 "MCP 호출은 무조건 `reply/tools.py` 밖"이었는데, 그 근거(재시도 루프 안
+중복 발송 위험)는 **쓰기에만** 적용된다. 읽기 전용 도구가 등장하며 규칙을 **부작용
+유무 기준으로 다시 갈랐다**(2026-07-30, `CLAUDE.md` 개정).
+
+**도구 발견은 두 서버에서 난이도가 달랐다.** Slack은 도구 8개라 스키마+이름 힌트로
+충분했지만, Notion은 **24개**를 노출하고 그중 `API-update-a-data-source`가 필수 인자
+(`data_source_id`)가 조회 도구와 동일해 **스키마 필터를 그대로 통과한다** — "이름을
+하드코딩하지 않는다"가 그 자체로 안전을 보장하지 않아 **쓰기 동사 배제 단계**를 따로
+넣었다.
+
+설계·실측 검증 전체는 `MCP_INTEGRATION.md` 참고 — 두 서버 모두 컨테이너를 실제로 띄워
+`initialize → tools/list → tools/call` 전 구간을 확인했고, Slack은 실제 발송
+(2026-07-29), Notion은 실제 DB 조회 + 공지 반영 before/after까지 검증했다(2026-07-31).
 
 ---
 
@@ -691,6 +709,12 @@ cs-assistant/
 │   ├── main.py                     # FastAPI (7절 API 계약)
 │   ├── common/
 │   │   ├── llm/                    # 벤더 추상화 (10절)
+│   │   ├── mcp/                    # MCP 클라이언트 (10절)
+│   │   │   ├── base.py·client.py·factory.py·toolschema.py
+│   │   │   ├── backends/           # noop / slack — 알림(쓰기·루프 밖·fail-soft)
+│   │   │   └── notices/            # 라이브 공지 조회(읽기·루프 안·fail-fast)
+│   │   │       ├── base.py·activity.py·factory.py
+│   │   │       └── backends/       # noop / stub / notion
 │   │   ├── rag/                    # 파싱·청킹·임베딩·리랭킹·ChromaDB
 │   │   └── privacy.py              # PII 마스킹 (5절)
 │   └── modules/
@@ -698,7 +722,7 @@ cs-assistant/
 │       └── reply/                  # graph.py / tools.py / judge.py / state.py / routing.py
 ├── prompts/                        # ★ 프롬프트·루브릭 = 버전 관리 대상, 단독 커밋
 ├── evals/
-│   ├── golden/                     # ★ 보호 경로 — 골든셋 6종 (6.3절)
+│   ├── golden/                     # ★ 보호 경로 — 골든셋 7종 (6.3절)
 │   ├── runners/                    # ★ 보호 경로 (check_thresholds.py 포함)
 │   └── reports/                    # 실행 결과 (gitignore)
 ├── data/
@@ -742,7 +766,7 @@ cs-assistant/
 전체 eval은 CI에서 자동으로 돌리지 않는다 — 생성·채점 결과의 변동성이 자동 블로킹 게이트에 적합하지 않고, 비용이 실제로 나간다. `evals/runners/check_thresholds.py`는 **사람이 실행**하고, 그 스크립트 자체도 보호 경로에 둔다(임계값을 낮춰 통과시키는 경로 차단).
 
 **모델 호출 없이 단위 테스트 가능한 것** (CI가 실제로 지키는 범위):
-`mask_pii` · `save_draft` 게이트 4종 · 에스컬레이션 조건 E1–E8 판정 · 인텐트→도구 매핑 · `validate_node` threshold 로직 · 청킹 · 하이드레이션.
+`mask_pii` · `save_draft` 게이트 6종 · 에스컬레이션 조건 E1–E9 판정 · 인텐트→도구 매핑 · 공지 활성 판정 · `validate_node` threshold 로직 · 청킹 · 하이드레이션.
 → 안전에 직결되는 로직이 전부 결정론적 코드에 있어서 **모델 없이 CI로 지킬 수 있다.** 이건 우연이 아니라 "LLM이 판단하고 코드가 결정한다" 원칙의 부수 효과다.
 
 ---
@@ -771,7 +795,7 @@ cs-assistant/
 - Judge: 크로스 벤더 — κ 재검증 후 확정
 - 훅 스크립트 언어: Python (stdlib json)
 - 범위: 풀스택(Next.js UI) + 배포까지 1차 범위
-- HITL: `escalated`를 1급 종료 상태로. 에스컬레이션 조건 E1–E8 (3.1절)
+- HITL: `escalated`를 1급 종료 상태로. 에스컬레이션 조건 E1–E9 (3.1절)
 - 파라미터 초깃값 전체 (3.3절) — 측정 후 조정
 
 **미결정 (개발 착수를 막지 않음)**
