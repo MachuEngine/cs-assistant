@@ -251,3 +251,16 @@ async def test_slack_notifier_returns_false_on_tool_error(monkeypatch):
         category="ORDER", confidence=0.9, escalation_reason="E1",
     )
     assert result is False
+
+
+def test_blank_notifier_falls_back_to_noop(monkeypatch):
+    """`MCP_NOTIFIER=` 처럼 값 없이 키만 둔 .env를 미설정과 같이 본다
+    (notices/factory.py와 같은 처리 — .env.example의 빈 값 스타일 때문에 흔하다)."""
+    monkeypatch.setenv("MCP_NOTIFIER", "")
+    assert isinstance(get_notifier(), NoopNotifier)
+
+
+def test_misspelled_notifier_still_fails_loudly(monkeypatch):
+    monkeypatch.setenv("MCP_NOTIFIER", "Slack")  # 대소문자 오타
+    with pytest.raises(NotImplementedError):
+        get_notifier()

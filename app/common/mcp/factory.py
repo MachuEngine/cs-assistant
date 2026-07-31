@@ -13,7 +13,9 @@ from .base import EscalationNotifier
 
 
 def get_notifier() -> EscalationNotifier:
-    backend = os.getenv("MCP_NOTIFIER", "noop")
+    # 빈 값(`MCP_NOTIFIER=` 만 있는 .env)은 미설정과 같이 본다 — notices/factory.py와
+    # 같은 이유다. 오타는 그대로 실패시킨다.
+    backend = os.getenv("MCP_NOTIFIER", "noop").strip() or "noop"
     if backend == "noop":
         return NoopNotifier()
     if backend == "slack":

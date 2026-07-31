@@ -301,3 +301,24 @@ async def test_tool_failure_message_is_english(monkeypatch):
 
     assert result.isascii(), f"한국어/내부 정보가 모델 컨텍스트로 샜다: {result}"
     assert "NOTION_MCP_URL" not in result
+
+
+def test_blank_notice_source_falls_back_to_noop(monkeypatch):
+    """`.env`에 `NOTICE_SOURCE=`처럼 값 없이 키만 두는 건 흔하다
+    (.env.example이 빈 값 스타일을 쓴다). 이때 NotImplementedError가 나면
+    check_live_notices가 그걸 조회 실패로 잡아 필수 인텐트가 전부 E9로
+    뒤집힌다 — 미설정은 '기능 끔'이지 오류가 아니다."""
+    monkeypatch.setenv("NOTICE_SOURCE", "")
+    assert isinstance(get_notice_source(), NoopNoticeSource)
+
+    monkeypatch.setenv("NOTICE_SOURCE", "   ")
+    assert isinstance(get_notice_source(), NoopNoticeSource)
+
+
+def test_misspelled_notice_source_still_fails_loudly(monkeypatch):
+    """반면 오타는 조용히 넘기면 안 된다 — 켰다고 믿는데 꺼져 있는 상태가
+    가장 나쁘다. 대소문자 차이도 오타로 본다."""
+    for bad in ("Notion", "NOTION", "stubb"):
+        monkeypatch.setenv("NOTICE_SOURCE", bad)
+        with pytest.raises(NotImplementedError):
+            get_notice_source()

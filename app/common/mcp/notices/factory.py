@@ -13,7 +13,13 @@ from .base import NoticeSource
 
 
 def get_notice_source() -> NoticeSource:
-    backend = os.getenv("NOTICE_SOURCE", "noop")
+    # 값이 비어 있으면(`NOTICE_SOURCE=` 만 있는 .env) 미설정과 같이 본다 —
+    # .env.example이 빈 값 스타일을 쓰기 때문에 흔히 밟는 함정인데, 여기서
+    # NotImplementedError가 나면 check_live_notices가 그걸 '조회 실패'로 잡아
+    # 공지 필수 인텐트가 전부 E9로 뒤집힌다. 미설정은 기능 끔이지 오류가 아니다.
+    # 반면 오타(대소문자 포함)는 아래에서 그대로 실패시킨다 — 켰다고 믿는데
+    # 꺼져 있는 상태가 가장 나쁘다.
+    backend = os.getenv("NOTICE_SOURCE", "noop").strip() or "noop"
     if backend == "noop":
         return NoopNoticeSource()
     if backend == "stub":
