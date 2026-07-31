@@ -285,7 +285,7 @@ def validate_draft_format(reply_text: str) -> str:
     return "Format check passed."
 
 
-# --- save_draft 결정론적 게이트 5종 ------------------------------------------
+# --- save_draft 결정론적 게이트 6종 ------------------------------------------
 # 전부 코드 판단(LLM 판단 아님). 통과해야만 draft_text가 실제로 갱신된다 —
 # 이후 validate_node는 이 게이트들을 다시 검사하지 않는다(이미 강제됐으므로).
 

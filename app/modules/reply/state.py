@@ -39,4 +39,4 @@ class ReplyState(TypedDict):
     validation_feedback: str
     budget: int                # REPLY_BUDGET+1로 초기화(오프셋은 graph.py 주석 참고)
     outcome: str                # "auto_draft" | "escalated" | "failed"
-    escalation_reason: str      # "E1".."E8" 또는 ""
+    escalation_reason: str      # "E1".."E9" 또는 ""
