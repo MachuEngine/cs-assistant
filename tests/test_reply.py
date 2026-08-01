@@ -424,6 +424,36 @@ async def test_agent_node_e9_not_triggered_for_non_required_intent(monkeypatch):
     assert result["escalation_reason"] == "E5"
 
 
+# --- agent_turns 계측 (과정 지표, NEXT_STEPS.md 우선순위 4) ------------------
+
+@pytest.mark.asyncio
+async def test_agent_node_counts_single_turn(monkeypatch):
+    monkeypatch.setattr(reply_graph, "get_llm_backend", lambda: _FakeLLMBackend())
+    _fresh_session(intent="cancel_order")
+    ctx = reply_tools.get_ctx()
+    ctx["escalate_requested"] = True  # 첫 턴에 바로 루프 종료
+
+    result = await agent_node(_agent_state("cancel_order", category="ORDER"))
+    assert result["agent_turns"] == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_node_accumulates_turns_across_retries(monkeypatch):
+    """budget 소진 없이 validate_node가 재시도를 보낼 때, agent_node가 이전
+    호출까지의 누적값(state["agent_turns"])에 이번 호출분만 더해야 한다
+    (budget 필드와 동일 패턴 — LangGraph는 기본이 덮어쓰기라 직접 누적)."""
+    monkeypatch.setattr(reply_graph, "get_llm_backend", lambda: _FakeLLMBackend())
+    _fresh_session(intent="cancel_order")
+    ctx = reply_tools.get_ctx()
+    ctx["escalate_requested"] = True
+
+    state = _agent_state("cancel_order", category="ORDER")
+    state["agent_turns"] = 3  # 이전 재시도에서 이미 3턴 썼다고 가정
+
+    result = await agent_node(state)
+    assert result["agent_turns"] == 4
+
+
 # --- validate_node / 라우팅 (순수 함수, 모델 호출 없음) --------------------
 
 def test_validate_node_passes_when_scores_meet_threshold(monkeypatch):

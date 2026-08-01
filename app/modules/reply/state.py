@@ -40,3 +40,5 @@ class ReplyState(TypedDict):
     budget: int                # REPLY_BUDGET+1로 초기화(오프셋은 graph.py 주석 참고)
     outcome: str                # "auto_draft" | "escalated" | "failed"
     escalation_reason: str      # "E1".."E9" 또는 ""
+    agent_turns: int            # 이번 요청에서 agent_node가 LLM을 호출한 누적 횟수
+                                 # (재시도 포함 — 과정 지표 계측용, NEXT_STEPS.md 우선순위 4)

@@ -107,9 +107,11 @@ async def agent_node(state: ReplyState) -> dict:
     turn_cap = int(os.getenv("REPLY_TURN_CAP", "12"))
     malformed_cap = int(os.getenv("MALFORMED_TOOL_CALL_STREAK", "3"))
     malformed_streak = 0
+    turns_this_call = 0
 
     for _ in range(turn_cap):
         response = await _invoke_with_retry(llm, messages)
+        turns_this_call += 1
         messages.append(response)
 
         if not getattr(response, "tool_calls", []):
@@ -168,6 +170,9 @@ async def agent_node(state: ReplyState) -> dict:
         # run_reply()가 초기값을 REPLY_BUDGET+1로 세팅한다 — 여기서는 매 호출마다
         # 1씩만 깎으면 된다(분필과 동일 패턴, 오프셋만 다름).
         "budget": state["budget"] - 1,
+        # budget과 동일한 패턴 — LangGraph는 기본이 덮어쓰기라, 이전 재시도까지의
+        # 누적값을 읽어 이번 호출분만 더해 반환한다.
+        "agent_turns": state.get("agent_turns", 0) + turns_this_call,
     }
 
     save_draft_cap = int(os.getenv("SAVE_DRAFT_FAIL_STREAK", "3"))
@@ -318,6 +323,7 @@ def _build_initial_state(ticket: dict, triage: dict) -> ReplyState:
         "budget": int(os.getenv("REPLY_BUDGET", "2")) + 1,
         "outcome": "",
         "escalation_reason": "",
+        "agent_turns": 0,
     }
 
 
