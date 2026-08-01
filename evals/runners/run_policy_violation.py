@@ -16,6 +16,12 @@ unsupported_commitment(금액형)/missing_citation은 app.modules.reply.tools의
 대조군(clean draft)이 없어 precision/F1은 계산할 수 없다 — recall만
 측정하고, F1은 DESIGN.md가 이미 "참고값"으로 분류한 이유가 이것이다.
 정직하게 null로 리포트한다.
+
+[2026-08-01 수정] run_triage.py에서 실측된 것과 같은 결함 — judge_reply()
+호출(LLM)이 실패를 못 잡아서 --full 도중 한 건만 실패해도 전체가 죽고
+그때까지의 API 비용이 리포트 없이 날아갔다. 한 건의 judge 실패를 해당
+유형의 recall 분모에는 남기고(놓친 것으로 취급) 분자는 안 채우도록
+고친다 — 조용히 빼서 recall을 부풀리지 않는다(run_triage.py와 동일 원칙).
 """
 import asyncio
 import os
@@ -58,21 +64,31 @@ async def main() -> None:
     per_type_hit: dict[str, int] = {}
     gate_total, gate_hit = 0, 0
     misses = []
+    judge_failures = []  # run_triage.py와 동일한 이유 — 한 건 실패로 전체를 죽이지 않는다
 
     for i, row in enumerate(sample, start=1):
-        judge_result = await judge_reply(
-            row["ticket_text"], row["draft_text"], [], llm,
-            tool_results_log=row.get("tool_results_log", []),
-        )
-        found_types = {v.get("type") for v in judge_result.get("violations", [])}
-        hit = row["violation_type"] in found_types
-
         per_type_total[row["violation_type"]] = per_type_total.get(row["violation_type"], 0) + 1
+
+        try:
+            judge_result = await judge_reply(
+                row["ticket_text"], row["draft_text"], [], llm,
+                tool_results_log=row.get("tool_results_log", []),
+            )
+            found_types = {v.get("type") for v in judge_result.get("violations", [])}
+            hit = row["violation_type"] in found_types
+            error = None
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+            found_types = set()
+            hit = False  # 실패는 "못 잡음"으로 취급 — recall을 부풀리지 않는다
+            judge_failures.append({"golden_id": row.get("golden_id"), "violation_type": row["violation_type"],
+                                    "error": error})
+
         if hit:
             per_type_hit[row["violation_type"]] = per_type_hit.get(row["violation_type"], 0) + 1
         else:
             misses.append({"golden_id": row.get("golden_id"), "violation_type": row["violation_type"],
-                            "judge_violations": judge_result.get("violations", [])})
+                            "judge_violations": list(found_types), "judge_error": error})
 
         gate_result = _gate_check(row)
         if gate_result is not None:
@@ -80,7 +96,7 @@ async def main() -> None:
             gate_hit += int(gate_result)
 
         print(f"[{i}/{len(sample)}] {row.get('golden_id')} type={row['violation_type']} "
-              f"judge_hit={hit} gate_hit={gate_result}")
+              f"judge_hit={hit} gate_hit={gate_result}" + (f" ERROR={error}" if error else ""))
 
     overall_recall = sum(per_type_hit.values()) / sum(per_type_total.values()) if per_type_total else None
     per_type_recall = {
@@ -95,11 +111,15 @@ async def main() -> None:
         "judge_f1": None,  # 대조군(clean draft) 없어 계산 불가 — docstring 참고
         "gate_recall_for_covered_types": gate_recall,
         "misses": misses,
+        "judge_failures": judge_failures,
+        "judge_failure_count": len(judge_failures),
     }
     path = write_report("run_policy_violation", report)
 
     print(f"\njudge_overall_recall={overall_recall} per_type={per_type_recall}")
     print(f"gate_recall(②/④ 커버 유형만)={gate_recall}")
+    if judge_failures:
+        print(f"judge_reply() 실패(recall 분모에 남기고 미스로 처리): {len(judge_failures)}건")
     print(f"리포트 저장: {path}")
 
 

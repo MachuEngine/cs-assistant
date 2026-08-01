@@ -21,6 +21,12 @@
 넣지 않아도 된다** — 운영에서 실수로 켜지면 만료 공지가 되살아나는 위험을 피한다.
 
 evals/golden/·evals/runners/는 보호 경로다. 이 러너는 골든셋을 읽기만 한다.
+
+[2026-08-01 수정] run_triage.py에서 실측된 것과 같은 결함 — check_live_notices
+자체는 내부에서 조회 실패를 잡아 fail-fast 계약을 지키지만(app/modules/reply/tools.py),
+_run_row()가 부르는 save_draft나 세션 초기화 쪽에서 예기치 못한 예외(예: 골든 행
+필드 누락, KNOWN_CLAUSE_IDS 참조 오류)가 나면 러너 전체가 죽는다. 다른 러너와
+동일한 원칙으로 한 건의 실패를 "미달성"으로 기록하고 계속 진행하도록 고친다.
 """
 import asyncio
 import datetime
@@ -119,6 +125,29 @@ async def _run_row(row: dict) -> dict:
         "expected_e9": expected_e9,
         "got_e9": got_e9,
         "e9_match": got_e9 == expected_e9,
+        "row_error": None,
+    }
+
+
+def _failed_row_result(row: dict, error: str) -> dict:
+    """run_triage.py와 동일한 원칙 — 실패를 조용히 빼지 않고 '미달성'으로 기록한다."""
+    expected = sorted(row["expected_grounded_ids"])
+    expected_e9 = row["expected_escalation"] == "E9"
+    return {
+        "golden_id": row["golden_id"],
+        "scenario": row["scenario"],
+        "intent": row["intent"],
+        "tool_called": False,
+        "expected_grounded": expected,
+        "got_grounded": [],
+        "grounded_fp": [],
+        "grounded_fn": expected,
+        "grounded_match": False,
+        "gate6_rejected": None,
+        "expected_e9": expected_e9,
+        "got_e9": False,
+        "e9_match": expected_e9 is False,
+        "row_error": error,
     }
 
 
@@ -128,14 +157,21 @@ async def main() -> None:
     rows = golden if (args.full or args.all) else golden[: args.sample]
 
     results = []
+    row_failures = []
     for row in rows:
-        result = await _run_row(row)
+        try:
+            result = await _run_row(row)
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+            row_failures.append({"golden_id": row["golden_id"], "scenario": row["scenario"], "error": error})
+            result = _failed_row_result(row, error)
         results.append(result)
         print(
             f"{result['golden_id']} {result['scenario']:<28} "
             f"tool={result['tool_called']} "
             f"grounded={result['got_grounded']} (기대 {result['expected_grounded']}) "
             f"gate6={result['gate6_rejected']} e9={result['got_e9']}"
+            + (f" ERROR={result['row_error']}" if result["row_error"] else "")
         )
 
     n = len(results)
@@ -153,6 +189,8 @@ async def main() -> None:
         "gate6_triggered": sum(1 for r in gate6_rows if r["gate6_rejected"]),
         "e9_accuracy": sum(r["e9_match"] for r in results) / n if n else None,
         "results": results,
+        "row_failures": row_failures,
+        "row_failure_count": len(row_failures),
     }
     path = write_report("run_notices", report)
 
@@ -165,6 +203,8 @@ async def main() -> None:
         f"게이트⑥ {report['gate6_triggered']}/{report['gate6_applicable']}건 발동 · "
         f"e9_accuracy={report['e9_accuracy']}"
     )
+    if row_failures:
+        print(f"행 처리 실패(미달성으로 기록): {len(row_failures)}건")
     print(f"리포트 저장: {path}")
 
 

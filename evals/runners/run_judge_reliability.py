@@ -7,6 +7,13 @@ Judge 점수를 게이트로 쓰면 안 된다(PROMPTS.md Phase 7).
 tone_golden의 human_tone_score가 아직 하나도 채워지지 않았다면(사용자가
 아직 라벨링 전) κ를 억지로 계산하지 않고 "라벨 부족"을 명시적으로
 리포트하고 종료한다 — 조용히 잘못된 숫자를 내는 것보다 훨씬 낫다.
+
+[2026-08-01 수정] run_triage.py에서 실측된 것과 같은 결함 — judge_reply()
+호출(LLM)이 실패를 못 잡아서 --full 도중 한 건만 실패해도 전체가 죽고
+그때까지의 API 비용이 리포트 없이 날아갔다. run_triage.py와 동일한 원칙으로
+고친다: 실패한 행을 표본에서 조용히 빼서 kappa를 부풀리지 않는다 — 유효
+범위(1~5) 밖의 감시용(sentinel) judge 점수 0을 부여해 "반드시 불일치"로
+분모에 포함시키고, 원인 진단용으로 judge_failures에도 별도 기록한다.
 """
 import asyncio
 import os
@@ -25,6 +32,7 @@ from app.modules.reply.judge import judge_reply  # noqa: E402
 
 GOLDEN_PATH = "evals/golden/tone_golden.jsonl"
 KAPPA_GATE_THRESHOLD = 0.4
+JUDGE_FAILURE_SENTINEL = 0  # 유효 점수(1~5) 밖 — kappa 계산에서 항상 불일치로 취급된다
 
 
 def _cohens_kappa(y1: list[int], y2: list[int]) -> float:
@@ -72,17 +80,27 @@ async def main() -> None:
 
     human_scores, judge_scores = [], []
     rows_detail = []
+    judge_failures = []  # run_triage.py와 동일한 이유 — 한 건 실패로 전체를 죽이지 않는다
     for i, row in enumerate(sample, start=1):
-        judge_result = await judge_reply(
-            row["ticket_text"], row["draft_text"], [], llm,
-            tool_results_log=row.get("tool_results_log", []),
-        )
-        judge_tone = judge_result["tone"]
         human_tone = row["human_tone_score"]
+        try:
+            judge_result = await judge_reply(
+                row["ticket_text"], row["draft_text"], [], llm,
+                tool_results_log=row.get("tool_results_log", []),
+            )
+            judge_tone = judge_result["tone"]
+            error = None
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+            judge_tone = JUDGE_FAILURE_SENTINEL
+            judge_failures.append({"golden_id": row.get("golden_id"), "error": error})
+
         human_scores.append(human_tone)
         judge_scores.append(judge_tone)
-        rows_detail.append({"golden_id": row.get("golden_id"), "human": human_tone, "judge": judge_tone})
-        print(f"[{i}/{len(sample)}] {row.get('golden_id')} human={human_tone} judge={judge_tone}")
+        rows_detail.append({"golden_id": row.get("golden_id"), "human": human_tone, "judge": judge_tone,
+                             "error": error})
+        print(f"[{i}/{len(sample)}] {row.get('golden_id')} human={human_tone} judge={judge_tone}"
+              + (f" ERROR={error}" if error else ""))
 
     kappa = _cohens_kappa(human_scores, judge_scores)
     within_one = sum(1 for h, j in zip(human_scores, judge_scores) if abs(h - j) <= 1) / len(sample)
@@ -96,11 +114,15 @@ async def main() -> None:
         "gate_threshold": KAPPA_GATE_THRESHOLD,
         "trustworthy": kappa >= KAPPA_GATE_THRESHOLD,
         "rows": rows_detail,
+        "judge_failures": judge_failures,
+        "judge_failure_count": len(judge_failures),
     }
     path = write_report("run_judge_reliability", report)
 
     print(f"\ncohens_kappa={kappa:.3f} (게이트 임계값 {KAPPA_GATE_THRESHOLD}) "
           f"within_one_agreement={within_one:.3f}")
+    if judge_failures:
+        print(f"judge_reply() 실패(불일치로 처리·kappa에 포함): {len(judge_failures)}건")
     if kappa < KAPPA_GATE_THRESHOLD:
         print("경고: κ가 임계값 미달입니다 — 다른 어떤 지표도 이 Judge 점수를 게이트로 쓰지 마세요.")
     print(f"리포트 저장: {path}")
