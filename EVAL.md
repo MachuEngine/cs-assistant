@@ -367,17 +367,115 @@ ESC-026을 빼도 대조군 FP율은 2/5=0.4로 여전히 낮지 않다. ESC-027
 보고만 한다**. 다음 `--full` 재실행 전 `.env`의 `NOTICE_SOURCE`를 `noop`으로 되돌리면
 ESC-026 쪽 노이즈는 제거하고 순수하게 이 문제만 재측정할 수 있다.
 
-## 미측정 지표 (알려진 공백)
+## PII FP율 + 정책위반 F1 인프라 구축 및 최초 측정 (2026-08-01, 야간 자율 검토 후속)
 
-- **톤 평균 ≥4.0** (DESIGN.md 6.2 🟡): `tone_golden`이 라벨링 전이라 측정 불가. 별도로,
-  이 지표는 원래도 "많은 실제 초안의 평균"을 재는 것이라 tone_golden(κ 측정용으로 선별된
-  30건)만으로는 대표성이 부족하다 — `--full` 단계에서 더 큰 실제 배치로 별도 측정 필요.
-- **정책 위반 검출 F1** (DESIGN.md 6.2, 참고값): `policy_violation_golden`이 위반이 있는
-  양성 예시만 있고 대조군(clean draft)이 없어 precision/F1을 계산할 수 없다. Recall만
-  측정 가능 — DESIGN.md도 F1을 참고값으로만 분류한 이유와 일치.
-- **PII FP율**: 비-PII를 잘못 마스킹하는 케이스 골든 데이터가 아직 없음.
-- **과정 지표**(평균 반복수·도구 호출수·latency, 🟢): 별도 러너 없음 — `--full` 단계에서
-  실제 배치 실행 시 부가적으로 수집 예정.
+NEXT_STEPS.md 우선순위 4의 미측정 지표 중 2개를 실제로 측정 가능하게 만들고 최초
+실행까지 완료했다. 골든셋 추가(`evals/golden/`, 보호 경로)는 사람이 스크래치 경로에서
+직접 옮겼고, 러너 로직은 사전에 합성 데이터로 검증한 뒤 반영했다.
+
+### PII FP율 — `run_pii.py --sample 58`(58건 전수, LLM 호출 없음)
+
+`pii_golden.jsonl`에 `fp_case: true`로 표시한 대조군 8건(PHONE 2·CARD 2·ADDRESS 2·
+NAME 2 — 전부 실제로는 PII가 아니지만 마스킹 정규식과 우연히 모양이 겹치는 문구)을
+추가했다.
+
+```
+fn_rate = 0.0   (기존 커버리지 그대로 유지)
+fp_rate = 1.0   (8건 전부 오탐)
+```
+
+**8건 전부 오탐 원인**:
+- PHONE(2건): 상품 모델번호/참조번호("212-555-0187")가 우연히 전화번호 구분자
+  패턴과 겹침
+- CARD(2건): Luhn-valid하지만 카드가 아닌 참조번호(테스트용으로 잘 알려진
+  `4111111111111111`, `378282246310005`를 추적번호 맥락으로 사용)
+- ADDRESS(2건): "2 USB Flash Drive", "3 External Hard Drive"처럼 수량+제품명이
+  ADDRESS 정규식(숫자+단어+도로유형어)과 겹침 — 실제 CS 티켓에서 흔할 조합
+- NAME(2건): "Grace Hall", "Nora Green Market"처럼 가제티어 이름 조합과 겹치는
+  장소/브랜드명
+
+**결정할 것**: `mask_pii` 정규식(특히 PHONE 구분자 요구·CARD Luhn 단독 판정·ADDRESS의
+도로유형어 목록)을 더 엄격하게 다듬을지 — FN(실제 PII 놓침)과의 트레이드오프가 있는
+설계 결정이라 사람 판단 필요. 게이트①(PII 재유출)은 이 오탐과 무관하게 정상 동작한다
+(오탐은 "과잉 마스킹"이지 "PII 누출"이 아니라 하드룰 위반은 아님 — 다만 정상적인
+비-PII 정보가 불필요하게 `{{TOKEN}}`으로 가려지는 사용성 문제).
+
+### 정책위반 precision/F1 — `run_policy_violation.py --full`(59건 전수)
+
+`policy_violation_golden.jsonl`에 위반 없는 클린 대조군 9건(PV-051~059, 9개 인텐트
+커버)을 추가했다. 각 행은 실제 정책 문서 원문(`data/synthetic/policies/*.md`)을
+`tool_results_log`에 그대로 넣고, 그 안에서만 근거를 끌어써 작성했다(계산으로 파생한
+숫자 없음, 인용 clause ID 정확, 고지 문구 포함, PII 없음) — 로컬에서 결정론적 게이트
+①~⑤ 9건 전부 통과 확인 완료.
+
+```
+n = 59 (양성 50 + 클린 대조군 9)
+judge_overall_recall = 0.48   per_type: unsupported_commitment 1.0 / policy_contradiction 0.0
+                                        / missing_citation 0.4 / out_of_scope_promise 0.0
+judge_precision = 0.75
+judge_f1 = 0.585
+control_fp_rate = 0.889  (대조군 9건 중 8건에서 Judge가 없는 위반을 보고)
+gate_recall_for_covered_types = 1.0  (게이트②/④는 여전히 완벽)
+```
+
+### 발견 3 — Judge가 클린 초안도 89%(8/9) 오탐한다, 전부 `missing_citation`으로
+
+기존에 기록된 "Judge가 `policy_contradiction`을 못 잡는다"(발견 1)보다 범위가 넓은
+문제다. 클린 대조군 9건 중 인용이 없어도 되는 `track_order`(PV-055, 인용 불필요)
+1건만 정확히 "위반 없음"으로 통과했고, **인용을 정확히 포함한 나머지 8건 전부가
+`missing_citation`으로 오탐됐다**(`evals/reports/run_policy_violation.json`의
+`control_fp_cases`). 초안에 `[CANC-02]`·`[REF-04]`·`[PAY-01]` 등 유효한 조항 ID가
+실제로 본문에 들어있는데도 Judge가 "인용 누락"으로 판정한 것 — 단순히 "ID 문자열이
+있는지" 이상의, Judge 나름의 (아직 불명확한) 충분성 기준이 있는 것으로 추정되나 근거
+불충분해 **원인은 결정하지 않고 보고만 한다**.
+
+**단, 안전장치는 여전히 안 뚫렸다** — `gate_recall_for_covered_types: 1.0`. Judge가
+클린 초안을 과잉 거부하는 방향의 오류라, 실제 운영에서는 "멀쩡한 초안이 불필요하게
+재시도/에스컬레이션되는" 비용 문제이지 "나쁜 초안이 새나가는" 안전 문제가 아니다.
+
+**결정할 것**: `prompts/judge_reply.md`의 `missing_citation` 판정 기준을 더 명확히
+다시 쓸지. 발견 1과 마찬가지로 주관적 판정 영역이라 CLAUDE.md 워크플로우상
+eval-reviewer 독립 리뷰를 거친 뒤 수정 여부를 결정해야 한다. 발견 1(policy_contradiction
+오분류)과 함께 묶어서 프롬프트 리뷰를 한 번에 진행하는 게 효율적일 것으로 보인다.
+
+## 톤 평균 + 과정 지표 — `run_batch_metrics.py --sample 15`(2026-08-01)
+
+`--sample 5` 예비 실행(아래 참고) 후 `--sample 40`은 백그라운드 실행 중 원인 불명으로
+kill됨(리포트 미저장, 데이터 없음) — `--sample 15`로 재시도해 완료.
+
+```
+n = 15 (auto_draft 14, escalated 1)
+tone_avg = 4.93  (n=14, 목표 ≥4.0 — 상회)
+agent_turns_avg = 7.13   tool_calls_avg = 5.53
+latency_avg = 110.5s   p50 = 71.1s   max = 529.2s
+```
+
+**한계 — 아직 인텐트 편향**: `data/synthetic/tickets.jsonl`이 인텐트별로 뭉쳐서
+정렬돼 있어, `--sample 15`는 **15건 전부 `cancel_order`**다. `tone_avg=4.93`은
+현재 `cancel_order` 하나에 대한 수치이지 27개 인텐트를 대표하지 않는다. 대표성
+있는 측정을 하려면 `select_sample()`을 파일 앞부분 슬라이스가 아니라 인텐트별
+층화추출이나 무작위추출로 바꿔야 한다 — 지금은 안 바꿈(다른 러너들도 전부 같은
+"앞부분 슬라이스" 방식이라 일관성 있게 유지, 사람 판단 필요 시 결정).
+
+**latency 편차가 크다는 신호**: `--sample 5`에서 TCK-000002(17턴/274.7s),
+`--sample 15`에서 TCK-000011(12턴/529.2s, 8분 49초)로 **두 표본에서 독립적으로
+비슷한 패턴**이 재현됐다 — 우연이 아니라 실제로 가끔 재시도를 많이 쓰는 티켓이
+존재하는 것으로 보인다. 재시도 최대 이론치는 `(REPLY_BUDGET+1)×REPLY_TURN_CAP`
+(기본값 기준 3×12=36턴)이라 12~17턴은 그 범위 안이지만, latency 8분대는 실사용
+관점에서 확인이 필요하다. **원인 미조사**(save_draft 게이트 반려가 반복돼서인지,
+도구 호출 낭비인지) — 표본을 늘려서 관찰하거나 개별 트레이스를 봐야 함.
+
+### `--sample 5` 예비 실행 (참고용, 위 15건 결과로 대체됨)
+`tone_avg=5.0`(n=5), `agent_turns_avg=8.2`, `latency_avg=102.9s`(p50 66.6s,
+max 274.7s) — 전부 `cancel_order`. 표본이 너무 작아 위 15건 결과를 대표치로 본다.
+
+## 미측정 지표 (알려진 공백, 전부 인프라 완성·최초 측정 완료로 갱신됨)
+
+- **톤 평균 ≥4.0**: ✅ 측정 완료(위 참고, `tone_avg=4.93`) — 단, 인텐트 편향 있음.
+- **정책 위반 검출 F1**: ✅ 측정 완료(위 "발견 3" 참고, `judge_f1=0.585`).
+- **PII FP율**: ✅ 측정 완료(위 참고, `fp_rate=1.0`).
+- **과정 지표**(평균 반복수·도구 호출수·latency): ✅ 측정 완료(위 참고) — latency
+  편차 신호는 별도 조사 필요(위 참고).
 - **라이브 공지 `--full` eval**: `run_notices.py`는 골든셋 19건이 전부라 `--sample 20`으로
   전수 커버되지만, `check_thresholds.py` 게이트에는 아직 넣지 않았다(첫 사이클 리포트만
   — 2~3회 이력 후 사람이 게이트화 결정, DESIGN.md 6.2절).
